@@ -14,6 +14,8 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [cameras, setCameras] = useState<{ id: string; label: string }[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState('');
   const [quickProducts, setQuickProducts] = useState<Product[]>([]);
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -24,6 +26,15 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
     if (cached.length > 0) {
       setQuickProducts(cached.slice(0, 12));
     }
+    
+    // Pre-fetch cameras list
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length > 0) {
+        setCameras(devices.map(d => ({ id: d.id, label: d.label })));
+        // Default to the last camera which is usually the back camera on most phones
+        setSelectedCameraId(devices[devices.length - 1].id);
+      }
+    }).catch(err => console.error("Error fetching cameras:", err));
   }, []);
 
   // Cleanup on unmount
@@ -35,7 +46,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
     };
   }, []);
 
-  const startScanner = async () => {
+  const startScanner = async (cameraId?: string) => {
     try {
       const element = document.getElementById(readerId);
       if (!element) {
@@ -50,17 +61,24 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
         scannerRef.current = new Html5Qrcode(readerId);
       }
 
-      const cameras = await Html5Qrcode.getCameras();
-      if (!cameras || cameras.length === 0) {
-        throw new Error("No cameras found on this device.");
+      // If we are already scanning, stop first
+      if (scannerRef.current.isScanning) {
+        await scannerRef.current.stop();
       }
+
+      const targetCameraId = cameraId || selectedCameraId || { facingMode: "environment" };
       
       await scannerRef.current.start(
-        { facingMode: "environment" },
+        targetCameraId,
         {
-          fps: 15,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0
+          fps: 20,
+          qrbox: (viewfinderWidth, viewHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewHeight);
+            const boxSize = Math.floor(minEdge * 0.7);
+            return { width: boxSize, height: boxSize };
+          },
+          aspectRatio: 1.0,
+          // Experimental: Enable zoom or specific constraints if needed
         },
         (decodedText) => {
           onScan(decodedText);
@@ -74,6 +92,14 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
       setError(err.message || "Could not access camera on mobile browser.");
     } finally {
       setIsInitializing(false);
+    }
+  };
+
+  const handleCameraChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newId = e.target.value;
+    setSelectedCameraId(newId);
+    if (isScanning) {
+      startScanner(newId);
     }
   };
 
@@ -160,8 +186,20 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
                 </p>
 
                 <div className="flex flex-col gap-3 w-full max-w-[220px]">
+                  {cameras.length > 1 && (
+                    <select 
+                      value={selectedCameraId || ""}
+                      onChange={(e) => setSelectedCameraId(e.target.value)}
+                      className="w-full bg-white/10 text-white text-[11px] font-bold px-4 py-2.5 rounded-xl border border-white/20 outline-none mb-1"
+                    >
+                      {cameras.map(cam => (
+                        <option key={cam.id} value={cam.id} className="text-slate-900">{cam.label || `Camera ${cam.id.slice(0, 4)}`}</option>
+                      ))}
+                    </select>
+                  )}
+
                   <button 
-                    onClick={startScanner}
+                    onClick={() => startScanner()}
                     className="w-full py-3.5 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all active:scale-95 text-xs uppercase tracking-wider"
                   >
                     Start Camera
@@ -190,7 +228,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
             {isScanning && (
               <div className="absolute inset-0 pointer-events-none z-20">
                 <div className="absolute inset-0 bg-black/40"></div>
-                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[250px] h-[250px] border-2 border-white/40 rounded-2xl shadow-[0_0_0_999px_rgba(0,0,0,0.5)]">
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] h-[200px] border-2 border-white/40 rounded-2xl shadow-[0_0_0_999px_rgba(0,0,0,0.5)]">
                   <div className="absolute -top-1 -left-1 w-10 h-10 border-t-4 border-l-4 border-indigo-500 rounded-tl-xl"></div>
                   <div className="absolute -top-1 -right-1 w-10 h-10 border-t-4 border-r-4 border-indigo-500 rounded-tr-xl"></div>
                   <div className="absolute -bottom-1 -left-1 w-10 h-10 border-b-4 border-l-4 border-indigo-500 rounded-bl-xl"></div>
@@ -198,10 +236,29 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
                   
                   <motion.div 
                     animate={{ top: ["10%", "90%", "10%"] }}
-                    transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-                    className="absolute left-4 right-4 h-0.5 bg-indigo-500 shadow-[0_0_20px_rgba(99,102,241,1)] z-30 opacity-70"
+                    transition={{ duration: 2.0, repeat: Infinity, ease: "linear" }}
+                    className="absolute left-4 right-4 h-0.5 bg-indigo-500 shadow-[0_0_20px_rgba(99,102,241,1)] z-30"
                   />
+
+                  <div className="absolute -bottom-12 left-0 right-0 text-center text-white text-[10px] font-bold uppercase tracking-widest opacity-80">
+                    Align Barcode within Frame
+                  </div>
                 </div>
+              </div>
+            )}
+
+            {/* Camera Switcher (Visible when scanning or initial) */}
+            {isScanning && cameras.length > 1 && (
+              <div className="absolute bottom-4 left-4 right-4 z-40 flex justify-center pointer-events-auto">
+                <select 
+                  value={selectedCameraId || ""}
+                  onChange={handleCameraChange}
+                  className="bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-4 py-2 rounded-full border border-white/20 outline-none max-w-[200px]"
+                >
+                  {cameras.map(cam => (
+                    <option key={cam.id} value={cam.id}>{cam.label || `Camera ${cam.id.slice(0, 4)}`}</option>
+                  ))}
+                </select>
               </div>
             )}
 
@@ -232,6 +289,18 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
                   </p>
 
                   <div className="flex flex-col gap-2.5 w-full max-w-[220px] mb-4">
+                    {cameras.length > 1 && (
+                      <select 
+                        value={selectedCameraId || ""}
+                        onChange={(e) => setSelectedCameraId(e.target.value)}
+                        className="w-full bg-white/10 text-white text-[11px] font-bold px-4 py-2.5 rounded-xl border border-white/20 outline-none mb-1"
+                      >
+                        {cameras.map(cam => (
+                          <option key={cam.id} value={cam.id} className="text-slate-900">{cam.label || `Camera ${cam.id.slice(0, 4)}`}</option>
+                        ))}
+                      </select>
+                    )}
+
                     <input 
                       type="file" 
                       accept="image/*" 
