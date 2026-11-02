@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useId } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, AlertCircle, Loader2, Image as ImageIcon } from 'lucide-react';
+import { X, Camera, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Product } from '../types';
+import { getCachedProducts } from '../lib/offlineCache';
 
 interface BarcodeScannerProps {
   onScan: (decodedText: string) => void;
@@ -13,8 +15,16 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [manualCode, setManualCode] = useState('');
+  const [quickProducts, setQuickProducts] = useState<Product[]>([]);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const readerId = useId().replace(/:/g, ''); // Generate unique ID for the reader element
+
+  useEffect(() => {
+    const cached = getCachedProducts();
+    if (cached.length > 0) {
+      setQuickProducts(cached.slice(0, 12));
+    }
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -42,7 +52,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
 
       const cameras = await Html5Qrcode.getCameras();
       if (!cameras || cameras.length === 0) {
-        throw new Error("No cameras found on this device. Please use 'Snap & Scan' below.");
+        throw new Error("No cameras found on this device.");
       }
       
       await scannerRef.current.start(
@@ -61,7 +71,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
       setIsScanning(true);
     } catch (err: any) {
       console.error("Scanner Start Error:", err);
-      setError(err.message || "Could not access camera. Please use 'Snap & Scan' below.");
+      setError(err.message || "Could not access camera on mobile browser.");
     } finally {
       setIsInitializing(false);
     }
@@ -92,7 +102,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
       onClose();
     } catch (err: any) {
       console.error("Scan file error:", err);
-      setError("Could not read barcode from photo. Please try again or enter code manually.");
+      setError("Could not read barcode from photo. Please select from quick items below or enter code manually.");
     } finally {
       setIsInitializing(false);
     }
@@ -120,8 +130,8 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
               <Camera className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 leading-tight">Phone Scanner</h3>
-              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Rear Camera & Snap Mode</p>
+              <h3 className="font-bold text-slate-900 leading-tight">Barcode Scanner</h3>
+              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Mobile & Desktop Mode</p>
             </div>
           </div>
           <button 
@@ -146,31 +156,33 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
                 </div>
                 <h4 className="text-white font-bold text-lg mb-1">Camera Scanner</h4>
                 <p className="text-slate-400 text-xs mb-6 leading-relaxed px-4">
-                  Tap below to start camera live stream or snap a photo of the barcode instantly on your phone.
+                  Tap below to start camera or snap a photo of the barcode instantly.
                 </p>
 
-                <button 
-                  onClick={startScanner}
-                  className="w-full max-w-[220px] py-3.5 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-750 transition-all active:scale-95 text-xs uppercase tracking-wider mb-2"
-                >
-                  Start Live Camera
-                </button>
+                <div className="flex flex-col gap-3 w-full max-w-[220px]">
+                  <button 
+                    onClick={startScanner}
+                    className="w-full py-3.5 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all active:scale-95 text-xs uppercase tracking-wider"
+                  >
+                    Start Camera
+                  </button>
 
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  capture="environment" 
-                  id="native-camera-capture-1" 
-                  className="hidden" 
-                  onChange={handleFileCapture} 
-                />
-                <label 
-                  htmlFor="native-camera-capture-1"
-                  className="w-full max-w-[220px] py-3.5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all active:scale-95 text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Camera className="w-4 h-4" />
-                  <span>Snap & Scan Photo</span>
-                </label>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    capture="environment" 
+                    id="native-camera-capture-1" 
+                    className="hidden" 
+                    onChange={handleFileCapture} 
+                  />
+                  <label 
+                    htmlFor="native-camera-capture-1"
+                    className="w-full py-3.5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all active:scale-95 text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Snap Photo</span>
+                  </label>
+                </div>
               </div>
             )}
 
@@ -201,7 +213,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
                   className="absolute inset-0 z-40 bg-slate-900 flex flex-col items-center justify-center text-white p-8 text-center"
                 >
                   <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
-                  <p className="font-bold text-lg">Processing Camera / Photo...</p>
+                  <p className="font-bold text-lg">Processing Camera...</p>
                 </motion.div>
               )}
 
@@ -214,54 +226,81 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
                   <div className="w-16 h-16 bg-rose-500/20 rounded-full flex items-center justify-center mb-4">
                     <AlertCircle className="w-8 h-8 text-rose-500" />
                   </div>
-                  <p className="font-bold text-lg mb-1 text-rose-50">Camera Access Notice</p>
-                  <p className="text-xs text-slate-300 mb-6 px-4 leading-relaxed">
+                  <p className="font-bold text-lg mb-1 text-rose-50">Camera Note</p>
+                  <p className="text-xs text-slate-300 mb-4 px-4 leading-relaxed">
                     {error}
                   </p>
 
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    capture="environment" 
-                    id="native-camera-capture-2" 
-                    className="hidden" 
-                    onChange={handleFileCapture} 
-                  />
-                  <label 
-                    htmlFor="native-camera-capture-2"
-                    className="w-full max-w-[220px] py-3.5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all active:scale-95 text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 mb-3"
-                  >
-                    <Camera className="w-4 h-4" />
-                    <span>Snap & Scan Photo</span>
-                  </label>
+                  <div className="flex flex-col gap-2.5 w-full max-w-[220px] mb-4">
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      capture="environment" 
+                      id="native-camera-capture-2" 
+                      className="hidden" 
+                      onChange={handleFileCapture} 
+                    />
+                    <label 
+                      htmlFor="native-camera-capture-2"
+                      className="w-full py-3 bg-emerald-600 text-white font-black rounded-2xl shadow-md hover:bg-emerald-700 transition-all text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>Snap Photo</span>
+                    </label>
 
-                  <button 
-                    onClick={() => setError(null)} 
-                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors px-4 py-2 border border-indigo-400/30 rounded-xl"
-                  >
-                    Try Live Camera Again
-                  </button>
+                    <button 
+                      onClick={() => setError(null)} 
+                      className="w-full py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-2xl transition-colors"
+                    >
+                      Try Again
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
 
-          {/* Manual Entry Fallback */}
-          <div className="p-4 sm:p-6 bg-white border-t border-slate-100 shrink-0">
-            <form onSubmit={handleManualSubmit}>
-              <p className="text-center text-[10px] text-slate-400 mb-4 font-black uppercase tracking-[0.2em]">Or enter code manually</p>
+          {/* Quick Select Barcode Items & Manual Entry */}
+          <div className="p-4 sm:p-6 bg-white border-t border-slate-100 space-y-4 shrink-0">
+            {quickProducts.length > 0 && (
+              <div>
+                <p className="text-[10px] text-slate-400 mb-2 font-black uppercase tracking-[0.2em] flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-indigo-600" />
+                  Quick Tap Item Barcode
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
+                  {quickProducts.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        onScan(p.barcode || p.id);
+                        onClose();
+                      }}
+                      className="p-2.5 bg-slate-50 hover:bg-indigo-50/80 border border-slate-200 hover:border-indigo-300 rounded-xl text-left transition-all active:scale-95 group"
+                    >
+                      <p className="text-xs font-bold text-slate-900 truncate group-hover:text-indigo-600">{p.name}</p>
+                      <p className="text-[10px] font-mono text-indigo-600 font-semibold">{p.barcode || 'No Barcode'}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleManualSubmit} className="pt-2 border-t border-slate-100">
+              <p className="text-center text-[10px] text-slate-400 mb-2 font-black uppercase tracking-[0.2em]">Or enter code manually</p>
               <div className="flex gap-3">
                 <input
                   type="text"
                   value={manualCode}
                   onChange={(e) => setManualCode(e.target.value)}
                   placeholder="Barcode / SKU"
-                  className="flex-1 px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm font-mono transition-all"
+                  className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm font-mono transition-all"
                 />
                 <button
                   type="submit"
                   disabled={!manualCode.trim()}
-                  className="px-6 py-4 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 disabled:opacity-30 transition-all active:scale-95 shadow-lg shadow-slate-900/10"
+                  className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 disabled:opacity-30 transition-all active:scale-95 shadow-md shadow-indigo-100"
                 >
                   OK
                 </button>
