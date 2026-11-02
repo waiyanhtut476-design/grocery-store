@@ -159,6 +159,33 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               )}
             </div>
 
+            {/* Vibrant Color Theme Selector */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
+                Store Color Theme (Vibrant & Colorful)
+              </label>
+              <div className="grid grid-cols-6 gap-2">
+                {[
+                  { id: 'emerald', label: 'Emerald', bg: 'bg-emerald-500' },
+                  { id: 'indigo', label: 'Indigo', bg: 'bg-indigo-600' },
+                  { id: 'violet', label: 'Violet', bg: 'bg-violet-600' },
+                  { id: 'amber', label: 'Amber', bg: 'bg-amber-500' },
+                  { id: 'rose', label: 'Rose', bg: 'bg-rose-500' },
+                  { id: 'cyan', label: 'Cyan', bg: 'bg-cyan-500' },
+                ].map((theme) => (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    onClick={() => setSettings({ ...settings, themeColor: theme.id as any })}
+                    className={`h-10 rounded-xl ${theme.bg} flex items-center justify-center text-white transition-all shadow-md ${settings.themeColor === theme.id ? 'ring-4 ring-offset-2 ring-slate-900 scale-105' : 'opacity-80 hover:opacity-100'}`}
+                    title={theme.label}
+                  >
+                    {settings.themeColor === theme.id && <Check className="w-5 h-5 drop-shadow" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Receipt Footer Message */}
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">

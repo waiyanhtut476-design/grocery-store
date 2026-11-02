@@ -94,6 +94,24 @@ export function Layout({ children, user, role, activeTab, setActiveTab, onLogout
     };
   }, [isMobileMenuOpen]);
 
+  const themeColor = settings.themeColor || 'emerald';
+  const activeBgMap: Record<string, string> = {
+    emerald: 'bg-emerald-600 text-white shadow-md shadow-emerald-100',
+    indigo: 'bg-indigo-600 text-white shadow-md shadow-indigo-100',
+    violet: 'bg-violet-600 text-white shadow-md shadow-violet-100',
+    amber: 'bg-amber-600 text-white shadow-md shadow-amber-100',
+    rose: 'bg-rose-600 text-white shadow-md shadow-rose-100',
+    cyan: 'bg-cyan-600 text-white shadow-md shadow-cyan-100',
+  };
+  const gradientMap: Record<string, string> = {
+    emerald: 'from-emerald-600 via-teal-600 to-emerald-700 shadow-emerald-200',
+    indigo: 'from-indigo-600 via-indigo-700 to-violet-700 shadow-indigo-200',
+    violet: 'from-violet-600 via-purple-600 to-indigo-700 shadow-violet-200',
+    amber: 'from-amber-500 via-orange-600 to-yellow-600 shadow-amber-200',
+    rose: 'from-rose-600 via-pink-600 to-red-600 shadow-rose-200',
+    cyan: 'from-cyan-600 via-blue-600 to-teal-600 shadow-cyan-200',
+  };
+
   const menuItems = [
     { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard },
     { id: 'pos', label: t('pos'), icon: ShoppingCart },
@@ -130,20 +148,20 @@ export function Layout({ children, user, role, activeTab, setActiveTab, onLogout
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200">
         <div className="p-5 flex items-center justify-between border-b border-slate-100">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-violet-600 flex items-center justify-center text-white text-lg shadow-md shadow-indigo-200 shrink-0 font-display">
+            <div className={cn("w-10 h-10 rounded-2xl bg-gradient-to-tr flex items-center justify-center text-white text-lg shadow-md shrink-0 font-display", gradientMap[themeColor])}>
               🛒
             </div>
             <div className="min-w-0">
               <h1 className="text-sm font-black text-slate-900 tracking-tight truncate">
                 {settings.storeName || 'Grocery Flow'}
               </h1>
-              <p className="text-[10px] text-indigo-600 uppercase tracking-widest font-black">{role || 'User'}</p>
+              <p className={cn("text-[10px] uppercase tracking-widest font-black", `text-${themeColor}-600`)}>{role || 'User'}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setIsSettingsOpen(true)}
-            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors shrink-0"
+            className={cn("p-2 text-slate-400 hover:rounded-xl transition-colors shrink-0", `hover:text-${themeColor}-600 hover:bg-${themeColor}-50`)}
             title={t('settings')}
           >
             <SettingsIcon className="w-4 h-4" />
@@ -158,7 +176,7 @@ export function Layout({ children, user, role, activeTab, setActiveTab, onLogout
               className={cn(
                 "w-full flex items-center justify-between px-3 py-2.5 text-xs font-bold rounded-xl transition-all group",
                 activeTab === item.id 
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100" 
+                  ? activeBgMap[themeColor] 
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               )}
             >

@@ -9,7 +9,8 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   currencySymbol: '฿',
   taxEnabled: false,
   taxRate: 7,
-  receiptFooter: 'Thank you for shopping with us!'
+  receiptFooter: 'Thank you for shopping with us!',
+  themeColor: 'emerald'
 };
 
 export function subscribeStoreSettings(callback: (settings: StoreSettings) => void) {

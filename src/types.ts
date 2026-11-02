@@ -81,6 +81,7 @@ export interface StoreSettings {
   taxEnabled: boolean;
   taxRate: number;
   receiptFooter: string;
+  themeColor?: 'emerald' | 'indigo' | 'violet' | 'amber' | 'rose' | 'cyan';
   updatedAt?: any;
 }
 
