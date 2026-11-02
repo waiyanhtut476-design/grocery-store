@@ -1,0 +1,6 @@
+{
+  "name": "Grocery Flow",
+  "description": "A beautiful and efficient grocery store management system with POS, inventory, and sales tracking.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

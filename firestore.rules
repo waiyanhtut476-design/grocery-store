@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Safer role lookup
+    function getRole() {
+      return get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles/$(request.auth.uid)) && getRole() == 'admin';
+    }
+
+    function isStaff() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles/$(request.auth.uid)) && (getRole() == 'staff' || getRole() == 'admin');
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Entity Validations
+    function isValidProduct(data) {
+      return data.keys().hasAll(['name', 'barcode', 'price', 'stock', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() <= 100
+        && data.barcode is string && data.barcode.size() <= 50
+        && data.price is number && data.price >= 0
+        && data.stock is number && data.stock >= 0;
+    }
+
+    function isValidSale(data) {
+      return data.keys().hasAll(['items', 'total', 'staffId', 'createdAt'])
+        && data.items is list
+        && data.total is number
+        && data.staffId == request.auth.uid
+        && data.createdAt == request.time;
+    }
+
+    function isValidRole(data) {
+      return data.keys().hasAll(['role', 'email', 'updatedAt'])
+        && data.role in ['admin', 'staff']
+        && data.email is string
+        && data.updatedAt == request.time;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll(['title', 'status', 'createdAt'])
+        && data.title is string && data.title.size() <= 100
+        && data.status in ['todo', 'done']
+        && data.createdAt == request.time;
+    }
+
+    // Collection Rules
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow create: if isStaff() && isValidProduct(request.resource.data) 
+                    && request.resource.data.createdAt == request.time 
+                    && request.resource.data.updatedAt == request.time;
+      allow update: if isStaff() && isValidProduct(request.resource.data)
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+    }
+
+    match /sales/{saleId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && isValidSale(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
+    match /roles/{userId} {
+      // Avoid recursion by checking UID directly for own document
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && (request.auth.uid == userId || isAdmin()) && isValidRole(request.resource.data);
+      allow update: if isAdmin() && isValidRole(request.resource.data);
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isStaff();
+      allow create, update: if isStaff() && isValidTask(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

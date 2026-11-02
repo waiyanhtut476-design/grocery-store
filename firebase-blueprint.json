@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "A grocery product in the inventory.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "barcode": { "type": "string", "maxLength": 50 },
+        "price": { "type": "number" },
+        "stock": { "type": "number" },
+        "categoryId": { "type": "string" },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "description": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "barcode", "price", "stock", "createdAt", "updatedAt"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "A category for products.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdAt"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "A completed sale transaction.",
+      "type": "object",
+      "properties": {
+        "items": { "type": "array" },
+        "total": { "type": "number" },
+        "staffId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["items", "total", "staffId", "createdAt"]
+    },
+    "UserRole": {
+      "title": "UserRole",
+      "description": "Mapping of user UID to their role in the store.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["admin", "staff"] },
+        "email": { "type": "string", "format": "email" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["role", "email", "updatedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A task for store staff.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["todo", "done"] },
+        "assignedTo": { "type": "string" },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Store inventory products."
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Product categories."
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Sales history."
+    },
+    "/roles/{userId}": {
+      "schema": "UserRole",
+      "description": "User permissions."
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Store management tasks."
+    }
+  }
+}
