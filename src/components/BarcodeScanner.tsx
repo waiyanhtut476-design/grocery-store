@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useId } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Camera, AlertCircle, Loader2, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface BarcodeScannerProps {
@@ -27,7 +27,6 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
 
   const startScanner = async () => {
     try {
-      // Ensure the element exists in DOM before starting
       const element = document.getElementById(readerId);
       if (!element) {
         console.error("Scanner element not found in DOM");
@@ -37,15 +36,13 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
       setIsInitializing(true);
       setError(null);
 
-      // Create new instance if not exists
       if (!scannerRef.current) {
         scannerRef.current = new Html5Qrcode(readerId);
       }
 
-      // Check for cameras
       const cameras = await Html5Qrcode.getCameras();
       if (!cameras || cameras.length === 0) {
-        throw new Error("No cameras found on this device. Please ensure camera permissions are granted.");
+        throw new Error("No cameras found on this device. Please use 'Snap & Scan' below.");
       }
       
       await scannerRef.current.start(
@@ -64,7 +61,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
       setIsScanning(true);
     } catch (err: any) {
       console.error("Scanner Start Error:", err);
-      setError(err.message || "Could not access camera.");
+      setError(err.message || "Could not access camera. Please use 'Snap & Scan' below.");
     } finally {
       setIsInitializing(false);
     }
@@ -78,6 +75,26 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
       } catch (err) {
         console.error("Failed to stop scanner:", err);
       }
+    }
+  };
+
+  const handleFileCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setIsInitializing(true);
+      setError(null);
+      if (!scannerRef.current) {
+        scannerRef.current = new Html5Qrcode(readerId);
+      }
+      const decodedText = await scannerRef.current.scanFile(file, true);
+      onScan(decodedText);
+      onClose();
+    } catch (err: any) {
+      console.error("Scan file error:", err);
+      setError("Could not read barcode from photo. Please try again or enter code manually.");
+    } finally {
+      setIsInitializing(false);
     }
   };
 
@@ -104,7 +121,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
             </div>
             <div>
               <h3 className="font-bold text-slate-900 leading-tight">Phone Scanner</h3>
-              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Rear Camera Mode</p>
+              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Rear Camera & Snap Mode</p>
             </div>
           </div>
           <button 
@@ -119,25 +136,41 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
         <div className="relative overflow-y-auto flex-1 min-h-0">
           {/* Scanner Viewport Container */}
           <div className="relative aspect-square bg-slate-900 overflow-hidden flex items-center justify-center">
-            {/* The actual element used by html5-qrcode */}
             <div id={readerId} className="w-full h-full object-cover"></div>
             
             {/* Initial UI / Gesture required for Mobile */}
             {!isScanning && !isInitializing && !error && (
-              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-900 p-8 text-center">
-                <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mb-6">
-                  <Camera className="w-10 h-10 text-indigo-400" />
+              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-900 p-6 text-center">
+                <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mb-4">
+                  <Camera className="w-8 h-8 text-indigo-400" />
                 </div>
-                <h4 className="text-white font-bold text-xl mb-2">Camera Access</h4>
-                <p className="text-slate-400 text-sm mb-8 leading-relaxed px-4">
-                  Tap the button to activate your camera and scan barcodes.
+                <h4 className="text-white font-bold text-lg mb-1">Camera Scanner</h4>
+                <p className="text-slate-400 text-xs mb-6 leading-relaxed px-4">
+                  Tap below to start camera live stream or snap a photo of the barcode instantly on your phone.
                 </p>
+
                 <button 
                   onClick={startScanner}
-                  className="w-full max-w-[200px] py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all active:scale-95"
+                  className="w-full max-w-[220px] py-3.5 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-750 transition-all active:scale-95 text-xs uppercase tracking-wider mb-2"
                 >
-                  Start Camera
+                  Start Live Camera
                 </button>
+
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  capture="environment" 
+                  id="native-camera-capture-1" 
+                  className="hidden" 
+                  onChange={handleFileCapture} 
+                />
+                <label 
+                  htmlFor="native-camera-capture-1"
+                  className="w-full max-w-[220px] py-3.5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all active:scale-95 text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Snap & Scan Photo</span>
+                </label>
               </div>
             )}
 
@@ -168,7 +201,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
                   className="absolute inset-0 z-40 bg-slate-900 flex flex-col items-center justify-center text-white p-8 text-center"
                 >
                   <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
-                  <p className="font-bold text-lg">Activating Camera...</p>
+                  <p className="font-bold text-lg">Processing Camera / Photo...</p>
                 </motion.div>
               )}
 
@@ -176,31 +209,37 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
                 <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="absolute inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center text-white p-8 text-center"
+                  className="absolute inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center text-white p-6 text-center"
                 >
-                  <div className="w-20 h-20 bg-rose-500/20 rounded-full flex items-center justify-center mb-6">
-                    <AlertCircle className="w-10 h-10 text-rose-500" />
+                  <div className="w-16 h-16 bg-rose-500/20 rounded-full flex items-center justify-center mb-4">
+                    <AlertCircle className="w-8 h-8 text-rose-500" />
                   </div>
-                  <p className="font-bold text-xl mb-2 text-rose-50">Access Denied</p>
-                  <p className="text-xs text-slate-400 mb-8 px-6 leading-relaxed">
+                  <p className="font-bold text-lg mb-1 text-rose-50">Camera Access Notice</p>
+                  <p className="text-xs text-slate-300 mb-6 px-4 leading-relaxed">
                     {error}
                   </p>
-                  <div className="bg-white/5 rounded-2xl p-5 text-xs text-slate-300 space-y-4 text-left w-full border border-white/10 mb-8">
-                    <p className="font-black text-indigo-400 uppercase tracking-widest text-[10px]">How to fix:</p>
-                    <p className="flex gap-2">
-                      <span className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center shrink-0">1</span>
-                      <span>Copy <b>Shared App URL</b> from AI Studio.</span>
-                    </p>
-                    <p className="flex gap-2">
-                      <span className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center shrink-0">2</span>
-                      <span>Open in <b>Chrome/Safari</b> on your phone.</span>
-                    </p>
-                  </div>
+
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    capture="environment" 
+                    id="native-camera-capture-2" 
+                    className="hidden" 
+                    onChange={handleFileCapture} 
+                  />
+                  <label 
+                    htmlFor="native-camera-capture-2"
+                    className="w-full max-w-[220px] py-3.5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all active:scale-95 text-xs uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 mb-3"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Snap & Scan Photo</span>
+                  </label>
+
                   <button 
                     onClick={() => setError(null)} 
-                    className="text-sm font-bold text-indigo-400 hover:text-indigo-300 transition-colors px-4 py-2 border border-indigo-400/30 rounded-xl"
+                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors px-4 py-2 border border-indigo-400/30 rounded-xl"
                   >
-                    Try again
+                    Try Live Camera Again
                   </button>
                 </motion.div>
               )}
