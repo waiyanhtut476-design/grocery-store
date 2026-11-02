@@ -13,7 +13,9 @@ import {
   Clock,
   Settings as SettingsIcon,
   Store,
-  Truck
+  Truck,
+  Download,
+  Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -23,6 +25,7 @@ import { useLanguage } from '../lib/i18n.tsx';
 import { db } from '../lib/firebase';
 import { collection, query, onSnapshot, where, limit } from 'firebase/firestore';
 import { SettingsModal } from './SettingsModal';
+import { InstallModal } from './InstallModal';
 import { DEFAULT_SETTINGS, subscribeStoreSettings } from '../lib/storeSettings';
 import { StoreSettings } from '../types';
 
@@ -42,6 +45,7 @@ interface LayoutProps {
 export function Layout({ children, user, role, activeTab, setActiveTab, onLogout }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isInstallOpen, setIsInstallOpen] = useState(false);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
   const [isShiftOpen, setIsShiftOpen] = useState(false);
@@ -125,16 +129,21 @@ export function Layout({ children, user, role, activeTab, setActiveTab, onLogout
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200">
         <div className="p-5 flex items-center justify-between border-b border-slate-100">
-          <div>
-            <h1 className="text-lg font-black text-slate-900 tracking-tight truncate max-w-[150px]">
-              {settings.storeName || 'Grocery Flow'}
-            </h1>
-            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-black">{role || 'User'}</p>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-violet-600 flex items-center justify-center text-white text-lg shadow-md shadow-indigo-200 shrink-0 font-display">
+              🛒
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-sm font-black text-slate-900 tracking-tight truncate">
+                {settings.storeName || 'Grocery Flow'}
+              </h1>
+              <p className="text-[10px] text-indigo-600 uppercase tracking-widest font-black">{role || 'User'}</p>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => setIsSettingsOpen(true)}
-            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
+            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors shrink-0"
             title={t('settings')}
           >
             <SettingsIcon className="w-4 h-4" />
@@ -188,6 +197,14 @@ export function Layout({ children, user, role, activeTab, setActiveTab, onLogout
               <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsInstallOpen(true)}
+            className="w-full flex items-center gap-2 px-3 py-2.5 mb-2 bg-gradient-to-r from-indigo-50 to-violet-50 hover:from-indigo-100 hover:to-violet-100 text-indigo-700 font-bold text-xs rounded-xl transition-all border border-indigo-200/60 shadow-xs"
+          >
+            <Download className="w-4 h-4 text-indigo-600 animate-bounce" />
+            <span>Add to Home Screen</span>
+          </button>
           <button
             onClick={onLogout}
             className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
@@ -296,7 +313,15 @@ export function Layout({ children, user, role, activeTab, setActiveTab, onLogout
               </span>
             )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsInstallOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl text-xs font-bold text-indigo-700 transition-colors shadow-xs"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Add to Home Screen</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsSettingsOpen(true)}
@@ -329,6 +354,12 @@ export function Layout({ children, user, role, activeTab, setActiveTab, onLogout
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* Install App Modal */}
+      <InstallModal
+        isOpen={isInstallOpen}
+        onClose={() => setIsInstallOpen(false)}
       />
     </div>
   );
