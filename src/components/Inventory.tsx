@@ -21,7 +21,8 @@ import {
   Filter,
   Image as ImageIcon,
   Loader2,
-  X
+  X,
+  Camera
 } from 'lucide-react';
 import { Product } from '../types';
 import { BarcodeScanner } from './BarcodeScanner';
@@ -185,11 +186,7 @@ export function Inventory({ role }: InventoryProps) {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200">
-                        {product.imageUrl ? (
-                          <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <ImageIcon className="w-5 h-5 text-slate-400" />
-                        )}
+                        <ProductImage src={product.imageUrl} name={product.name} />
                       </div>
                       <div>
                         <p className="font-semibold text-slate-900">{product.name}</p>
@@ -308,14 +305,31 @@ export function Inventory({ role }: InventoryProps) {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Image URL</label>
-                    <input
-                      type="url"
-                      value={formData.imageUrl}
-                      onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
-                      placeholder="https://..."
-                      className="w-full px-4 py-2 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Image</label>
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          value={formData.imageUrl}
+                          onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                          placeholder="Image URL (https://...)"
+                          className="flex-1 px-4 py-2 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                        <ImageCapture onCapture={(url) => setFormData({...formData, imageUrl: url})} />
+                      </div>
+                      {formData.imageUrl && (
+                        <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200">
+                          <img src={formData.imageUrl} className="w-full h-full object-cover" />
+                          <button 
+                            type="button" 
+                            onClick={() => setFormData({...formData, imageUrl: ''})}
+                            className="absolute top-1 right-1 p-1 bg-black/50 text-white rounded-full hover:bg-black/70"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
@@ -357,6 +371,86 @@ export function Inventory({ role }: InventoryProps) {
           onClose={() => setIsScannerOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+function ProductImage({ src, name }: { src?: string | null, name: string }) {
+  const [error, setError] = useState(false);
+  
+  if (!src || error) {
+    return <ImageIcon className="w-5 h-5 text-slate-400" />;
+  }
+
+  return (
+    <img 
+      src={src} 
+      alt={name} 
+      className="w-full h-full object-cover" 
+      onError={() => setError(true)}
+    />
+  );
+}
+
+function ImageCapture({ onCapture }: { onCapture: (url: string) => void }) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          // Resize image to keep base64 small
+          const canvas = document.createElement('canvas');
+          const MAX_SIZE = 400;
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          onCapture(dataUrl);
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  return (
+    <div>
+      <input
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileChange}
+        ref={inputRef}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors flex items-center gap-2 h-full px-4"
+      >
+        <Camera className="w-5 h-5" />
+        <span className="text-sm font-bold">Capture</span>
+      </button>
     </div>
   );
 }

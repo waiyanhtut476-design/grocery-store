@@ -58,17 +58,41 @@ export default function App() {
   }
 
   if (!user) {
+    const isIframe = window.self !== window.top;
+    const appUrl = window.location.href;
+
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 px-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Grocery Flow</h1>
+          <h1 className="text-3xl font-bold text-slate-900 mb-2 font-display">Grocery Flow</h1>
           <p className="text-slate-500 mb-8">Manage your store inventory and sales efficiently.</p>
+          
           <button
             onClick={signInWithGoogle}
-            className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-indigo-200 flex items-center justify-center gap-2"
+            className="w-full py-4 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-200 flex items-center justify-center gap-3 mb-4 active:scale-95"
           >
             Sign in with Google
           </button>
+
+          {isIframe && (
+            <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-100 text-left">
+              <p className="text-amber-800 text-xs font-bold uppercase tracking-wider mb-2">Mobile / iOS Users:</p>
+              <p className="text-amber-700 text-[13px] leading-relaxed mb-4">
+                If login fails, please open the app in a new tab. Browsers on iOS often block login inside iframes.
+              </p>
+              <a 
+                href={appUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-indigo-600 text-sm font-bold hover:underline"
+              >
+                Open in New Tab
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+          )}
+
+          <p className="mt-8 text-slate-400 text-[10px] uppercase tracking-widest font-black">Secure Cloud Infrastructure</p>
         </div>
       </div>
     );
