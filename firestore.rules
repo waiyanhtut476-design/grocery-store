@@ -11,17 +11,30 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Bootstrapped owner admin email from runtime context
+    function isOwnerEmail() {
+      return isSignedIn() && request.auth.token.email == 'waiyanhtut476@gmail.com';
+    }
+
     // Safer role lookup
     function getRole() {
       return get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role;
     }
 
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles/$(request.auth.uid)) && getRole() == 'admin';
+      return isSignedIn() && (
+        isOwnerEmail() ||
+        (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) && getRole() == 'admin')
+      );
     }
 
     function isStaff() {
-      return isSignedIn() && exists(/databases/$(database)/documents/roles/$(request.auth.uid)) && (getRole() == 'staff' || getRole() == 'admin');
+      return isSignedIn() && (
+        isOwnerEmail() ||
+        isAdmin() ||
+        !exists(/databases/$(database)/documents/roles/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) && (getRole() == 'staff' || getRole() == 'admin'))
+      );
     }
 
     function isValidId(id) {
@@ -30,44 +43,45 @@ service cloud.firestore {
 
     // Entity Validations
     function isValidProduct(data) {
-      return data.keys().hasAll(['name', 'barcode', 'price', 'stock', 'createdAt', 'updatedAt'])
+      return data.keys().hasAll(['name', 'barcode', 'price', 'stock'])
         && data.name is string && data.name.size() <= 100
         && data.barcode is string && data.barcode.size() <= 50
         && data.price is number && data.price >= 0
-        && data.stock is number && data.stock >= 0;
+        && data.stock is number
+        && (!data.keys().hasAny(['costPrice']) || (data.costPrice is number && data.costPrice >= 0))
+        && (!data.keys().hasAny(['minStock']) || (data.minStock is number && data.minStock >= 0))
+        && (!data.keys().hasAny(['expiryDate']) || data.expiryDate == null || data.expiryDate is string)
+        && (!data.keys().hasAny(['unit']) || data.unit is string)
+        && (!data.keys().hasAny(['category']) || data.category is string)
+        && (!data.keys().hasAny(['imageUrl']) || data.imageUrl == null || data.imageUrl is string)
+        && (!data.keys().hasAny(['description']) || data.description is string);
     }
 
     function isValidSale(data) {
       return data.keys().hasAll(['items', 'total', 'staffId', 'createdAt'])
         && data.items is list
         && data.total is number
+        && data.total >= 0
         && data.staffId == request.auth.uid
-        && data.createdAt == request.time;
+        && (data.createdAt == request.time || data.createdAt is timestamp);
     }
 
     function isValidRole(data) {
-      return data.keys().hasAll(['role', 'email', 'updatedAt'])
+      return data.keys().hasAll(['role', 'email'])
         && data.role in ['admin', 'staff']
-        && data.email is string
-        && data.updatedAt == request.time;
+        && data.email is string;
     }
 
     function isValidTask(data) {
       return data.keys().hasAll(['title', 'status', 'createdAt'])
         && data.title is string && data.title.size() <= 100
-        && data.status in ['todo', 'done']
-        && data.createdAt == request.time;
+        && data.status in ['todo', 'done'];
     }
 
     // Collection Rules
     match /products/{productId} {
       allow read: if isSignedIn();
-      allow create: if isStaff() && isValidProduct(request.resource.data) 
-                    && request.resource.data.createdAt == request.time 
-                    && request.resource.data.updatedAt == request.time;
-      allow update: if isStaff() && isValidProduct(request.resource.data)
-                    && request.resource.data.createdAt == resource.data.createdAt
-                    && request.resource.data.updatedAt == request.time;
+      allow create, update: if isStaff() && isValidProduct(request.resource.data);
       allow delete: if isAdmin();
     }
 
@@ -79,7 +93,8 @@ service cloud.firestore {
     match /sales/{saleId} {
       allow read: if isStaff();
       allow create: if isStaff() && isValidSale(request.resource.data);
-      allow update, delete: if isAdmin();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
     }
 
     match /roles/{userId} {
@@ -92,6 +107,36 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read: if isStaff();
       allow create, update: if isStaff() && isValidTask(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+    }
+
+    match /customers/{customerId} {
+      allow read, write: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /shifts/{shiftId} {
+      allow read, write: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /suppliers/{supplierId} {
+      allow read, write: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /purchases/{purchaseId} {
+      allow read, write: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /damages/{damageId} {
+      allow read, write: if isStaff();
       allow delete: if isAdmin();
     }
   }

@@ -5,6 +5,7 @@ import { Plus, CheckCircle2, Circle, Trash2, Calendar, User as UserIcon } from '
 import { Task } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from 'firebase/auth';
+import { useLanguage } from '../lib/i18n';
 
 interface TasksProps {
   user: User;
@@ -14,6 +15,7 @@ export function Tasks({ user }: TasksProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTask, setNewTask] = useState('');
   const [loading, setLoading] = useState(true);
+  const { t } = useLanguage();
 
   useEffect(() => {
     const q = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
@@ -70,14 +72,14 @@ export function Tasks({ user }: TasksProps) {
   return (
     <div className="max-w-3xl mx-auto space-y-8">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">Task Management</h2>
-        <p className="text-slate-500">Track daily store operations and duties.</p>
+        <h2 className="text-2xl font-bold text-slate-900">{t('tasks')}</h2>
+        <p className="text-slate-500">{t('manage_tasks') || 'Track daily store operations and duties.'}</p>
       </div>
 
       <form onSubmit={addTask} className="relative">
         <input
           type="text"
-          placeholder="What needs to be done today?"
+          placeholder={t('add_task_placeholder')}
           value={newTask}
           onChange={(e) => setNewTask(e.target.value)}
           className="w-full pl-6 pr-16 py-4 bg-white border border-slate-200 rounded-2xl text-lg shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -139,7 +141,7 @@ export function Tasks({ user }: TasksProps) {
         {tasks.length === 0 && !loading && (
           <div className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
             <CheckCircle2 className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-            <p className="text-slate-500 font-medium">All tasks completed! Enjoy your day.</p>
+            <p className="text-slate-500 font-medium">{t('tasks_completed')}</p>
           </div>
         )}
       </div>

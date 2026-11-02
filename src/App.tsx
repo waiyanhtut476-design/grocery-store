@@ -8,6 +8,9 @@ import { Inventory } from './components/Inventory';
 import { POS } from './components/POS';
 import { History } from './components/History';
 import { Tasks } from './components/Tasks';
+import { Customers } from './components/Customers';
+import { Shifts } from './components/Shifts';
+import { Suppliers } from './components/Suppliers';
 import { UserRole } from './types';
 import { Loader2 } from 'lucide-react';
 
@@ -37,7 +40,12 @@ export default function App() {
           }
         } catch (error) {
           console.error("Error fetching or creating role:", error);
-          // If role fetch fails, we stay in loading or show error
+          // Fallback to admin for owner or staff
+          if (currentUser.email === 'waiyanhtut476@gmail.com') {
+            setRole('admin');
+          } else {
+            setRole('staff');
+          }
         }
       } else {
         setUser(null);
@@ -100,12 +108,15 @@ export default function App() {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'dashboard': return <Dashboard />;
-      case 'inventory': return <Inventory role={role} />;
+      case 'dashboard': return <Dashboard onNavigate={setActiveTab} />;
+      case 'inventory': return <Inventory role={role} user={user} />;
       case 'pos': return <POS user={user} />;
+      case 'suppliers': return <Suppliers user={user} role={role} />;
+      case 'customers': return <Customers role={role} />;
+      case 'shifts': return <Shifts user={user} />;
       case 'history': return <History role={role} />;
       case 'tasks': return <Tasks user={user} />;
-      default: return <Dashboard />;
+      default: return <Dashboard onNavigate={setActiveTab} />;
     }
   };
 

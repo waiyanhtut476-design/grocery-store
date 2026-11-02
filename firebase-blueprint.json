@@ -8,7 +8,12 @@
         "name": { "type": "string", "maxLength": 100 },
         "barcode": { "type": "string", "maxLength": 50 },
         "price": { "type": "number" },
+        "costPrice": { "type": "number" },
         "stock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "expiryDate": { "type": "string" },
+        "unit": { "type": "string", "maxLength": 20 },
+        "category": { "type": "string", "maxLength": 50 },
         "categoryId": { "type": "string" },
         "imageUrl": { "type": "string", "format": "uri" },
         "description": { "type": "string", "maxLength": 500 },
@@ -62,6 +67,98 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "status", "createdAt"]
+    },
+    "StoreSettings": {
+      "title": "StoreSettings",
+      "description": "Store configuration and receipt settings.",
+      "type": "object",
+      "properties": {
+        "storeName": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "taxRate": { "type": "number" },
+        "taxEnabled": { "type": "boolean" },
+        "receiptFooter": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Store loyalty customer and credit tracking.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "points": { "type": "number" },
+        "creditBalance": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "createdAt"]
+    },
+    "Shift": {
+      "title": "Shift",
+      "description": "Cash drawer and work shift sessions.",
+      "type": "object",
+      "properties": {
+        "openedBy": { "type": "string" },
+        "openedByName": { "type": "string" },
+        "openingCash": { "type": "number" },
+        "openedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["open", "closed"] }
+      },
+      "required": ["openedBy", "openingCash", "openedAt", "status"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Store supplier profiles.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "createdAt"]
+    },
+    "PurchaseOrder": {
+      "title": "PurchaseOrder",
+      "description": "Goods received note and purchase invoice.",
+      "type": "object",
+      "properties": {
+        "invoiceNumber": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "supplierName": { "type": "string" },
+        "items": { "type": "array" },
+        "totalCost": { "type": "number" },
+        "receivedBy": { "type": "string" },
+        "receivedByName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invoiceNumber", "supplierId", "supplierName", "items", "totalCost", "receivedBy", "createdAt"]
+    },
+    "DamageRecord": {
+      "title": "DamageRecord",
+      "description": "Damaged or expired inventory write-offs.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "barcode": { "type": "string" },
+        "quantity": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "lossAmount": { "type": "number" },
+        "reason": { "type": "string", "enum": ["expired", "damaged", "lost", "other"] },
+        "notes": { "type": "string" },
+        "recordedBy": { "type": "string" },
+        "recordedByName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "productName", "barcode", "quantity", "costPrice", "lossAmount", "reason", "recordedBy", "createdAt"]
     }
   },
   "firestore": {
@@ -84,6 +181,30 @@
     "/tasks/{taskId}": {
       "schema": "Task",
       "description": "Store management tasks."
+    },
+    "/settings/{settingId}": {
+      "schema": "StoreSettings",
+      "description": "Store configuration."
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer profiles and credit."
+    },
+    "/shifts/{shiftId}": {
+      "schema": "Shift",
+      "description": "Shift and cash drawer sessions."
+    },
+    "/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Product supplier profiles."
+    },
+    "/purchases/{purchaseId}": {
+      "schema": "PurchaseOrder",
+      "description": "Stock-in purchase invoices."
+    },
+    "/damages/{damageId}": {
+      "schema": "DamageRecord",
+      "description": "Damaged/expired stock write-offs."
     }
   }
 }

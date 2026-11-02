@@ -94,10 +94,10 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl relative"
+        className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl relative max-h-[92vh] flex flex-col"
       >
         {/* Header */}
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-white relative z-10">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-white relative z-10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-50 rounded-xl text-indigo-600">
               <Camera className="w-5 h-5" />
@@ -116,7 +116,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
         </div>
 
         {/* Content Area */}
-        <div className="relative">
+        <div className="relative overflow-y-auto flex-1 min-h-0">
           {/* Scanner Viewport Container */}
           <div className="relative aspect-square bg-slate-900 overflow-hidden flex items-center justify-center">
             {/* The actual element used by html5-qrcode */}
@@ -208,7 +208,7 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
           </div>
 
           {/* Manual Entry Fallback */}
-          <div className="p-6 bg-white border-t border-slate-100">
+          <div className="p-4 sm:p-6 bg-white border-t border-slate-100 shrink-0">
             <form onSubmit={handleManualSubmit}>
               <p className="text-center text-[10px] text-slate-400 mb-4 font-black uppercase tracking-[0.2em]">Or enter code manually</p>
               <div className="flex gap-3">
