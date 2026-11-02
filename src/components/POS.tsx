@@ -39,6 +39,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User } from 'firebase/auth';
 import { useLanguage } from '../lib/i18n';
 import { DEFAULT_SETTINGS, subscribeStoreSettings } from '../lib/storeSettings';
+import { cacheProductsLocally, getCachedProducts, queueOfflineSale } from '../lib/offlineCache';
 
 interface POSProps {
   user: User;
@@ -81,13 +82,27 @@ export function POS({ user }: POSProps) {
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
 
-  // Fetch products
+  // Fetch products with offline caching support
   useEffect(() => {
+    const cached = getCachedProducts();
+    if (cached.length > 0) {
+      setProducts(cached);
+      setLoadingProducts(false);
+    }
+
     const q = query(collection(db, 'products'), limit(80));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const prods: Product[] = [];
       snapshot.forEach(doc => prods.push({ id: doc.id, ...doc.data() } as Product));
       setProducts(prods);
+      cacheProductsLocally(prods);
+      setLoadingProducts(false);
+    }, (error) => {
+      console.warn("Offline or error loading products in POS, using cache:", error);
+      const fallback = getCachedProducts();
+      if (fallback.length > 0) {
+        setProducts(fallback);
+      }
       setLoadingProducts(false);
     });
     return () => unsubscribe();
@@ -397,7 +412,60 @@ export function POS({ user }: POSProps) {
 
       setTimeout(() => setShowSuccess(false), 3000);
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'sales');
+      console.warn("Failed to commit sale to cloud (likely offline), queueing offline sale:", error);
+      const saleId = 'offline_' + Date.now();
+      const offlineSaleData = {
+        items: cart,
+        subtotal,
+        discountType,
+        discountValue: discountType === 'none' ? 0 : discountValue,
+        discountAmount: totalDiscount,
+        total: finalTotal,
+        paymentMethod,
+        cashReceived: paymentMethod === 'cash' ? cashReceived : finalTotal,
+        changeDue: paymentMethod === 'cash' ? changeDue : 0,
+        staffId: user.uid,
+        staffName: user.displayName || 'Staff',
+        customerId: selectedCustomer?.id,
+        customerName: selectedCustomer?.name,
+        pointsEarned,
+        pointsRedeemed: pointsRedeemedCount,
+        shiftId: activeShift?.id,
+      };
+      
+      queueOfflineSale(offlineSaleData);
+
+      const recordedSale: Sale = {
+        id: saleId,
+        items: [...cart],
+        subtotal,
+        discountType,
+        discountValue,
+        discountAmount: totalDiscount,
+        total: finalTotal,
+        paymentMethod,
+        cashReceived: paymentMethod === 'cash' ? cashReceived : finalTotal,
+        changeDue: paymentMethod === 'cash' ? changeDue : 0,
+        staffId: user.uid,
+        staffName: user.displayName || 'Staff',
+        customerId: selectedCustomer?.id,
+        customerName: selectedCustomer?.name,
+        pointsEarned,
+        pointsRedeemed: pointsRedeemedCount,
+        shiftId: activeShift?.id,
+        createdAt: new Date()
+      };
+
+      setCompletedSale(recordedSale);
+      setIsReceiptModalOpen(true);
+      setShowSuccess(true);
+      setCart([]);
+      setDiscountType('none');
+      setDiscountValue(0);
+      setRedeemPoints(false);
+      setSelectedCustomer(null);
+      setIsCheckoutModalOpen(false);
+      setShowMobileCart(false);
     } finally {
       setIsProcessing(false);
     }

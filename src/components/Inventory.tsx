@@ -42,6 +42,7 @@ import { useLanguage } from '../lib/i18n';
 import { exportToExcel } from '../lib/excel';
 import * as XLSX from 'xlsx';
 import { User } from 'firebase/auth';
+import { cacheProductsLocally, getCachedProducts } from '../lib/offlineCache';
 
 interface InventoryProps {
   role: 'admin' | 'staff' | null;
@@ -104,14 +105,27 @@ export function Inventory({ role, user }: InventoryProps) {
   const [formData, setFormData] = useState(initialFormData);
 
   useEffect(() => {
+    // Load cached products immediately for instant offline viewing
+    const cached = getCachedProducts();
+    if (cached.length > 0) {
+      setProducts(cached);
+      setLoading(false);
+    }
+
     const q = query(collection(db, 'products'), orderBy('updatedAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const prods: Product[] = [];
       snapshot.forEach(doc => prods.push({ id: doc.id, ...doc.data() } as Product));
       setProducts(prods);
+      cacheProductsLocally(prods);
       setLoading(false);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'products');
+      console.warn("Offline or error loading products, using cache:", error);
+      const fallback = getCachedProducts();
+      if (fallback.length > 0) {
+        setProducts(fallback);
+      }
+      setLoading(false);
     });
 
     return () => unsubscribe();
