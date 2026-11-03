@@ -10,10 +10,14 @@ import {
   deleteDoc, 
   serverTimestamp, 
   orderBy,
-  addDoc
+  addDoc,
+  writeBatch,
+  where,
+  limit
 } from 'firebase/firestore';
-import { Customer } from '../types';
+import { Customer, CreditTransaction } from '../types';
 import { useLanguage } from '../lib/i18n';
+import { format } from 'date-fns';
 import { 
   Users, 
   Search, 
@@ -27,10 +31,19 @@ import {
   X, 
   DollarSign, 
   FileDown,
-  Loader2
+  Loader2,
+  Clock,
+  ChevronRight,
+  Printer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { exportToExcel } from '../lib/excel';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 interface CustomersProps {
   role: 'admin' | 'staff' | null;
@@ -48,6 +61,38 @@ export function Customers({ role }: CustomersProps) {
   const [settlingCustomer, setSettlingCustomer] = useState<Customer | null>(null);
   const [settleAmount, setSettleAmount] = useState<number>(0);
   const [isSettling, setIsSettling] = useState(false);
+
+  // Credit Statement Modal
+  const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
+  const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>([]);
+
+  useEffect(() => {
+    if (!statementCustomer) {
+      setCreditTransactions([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'creditTransactions'),
+      where('customerId', '==', statementCustomer.id)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const txs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CreditTransaction));
+      // Sort client-side by createdAt desc
+      const sorted = txs.sort((a, b) => {
+        const timeA = a.createdAt?.seconds || 0;
+        const timeB = b.createdAt?.seconds || 0;
+        return timeB - timeA;
+      }).slice(0, 50);
+      setCreditTransactions(sorted);
+    }, (error) => {
+      console.error("Error loading credit transactions:", error);
+      handleFirestoreError(error, OperationType.LIST, 'creditTransactions');
+    });
+
+    return () => unsub();
+  }, [statementCustomer]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -124,11 +169,31 @@ export function Customers({ role }: CustomersProps) {
     if (!settlingCustomer || settleAmount <= 0) return;
     setIsSettling(true);
     try {
+      const now = serverTimestamp();
       const newCredit = Math.max(0, (settlingCustomer.creditBalance || 0) - settleAmount);
-      await updateDoc(doc(db, 'customers', settlingCustomer.id), {
+      
+      const batch = writeBatch(db);
+      
+      // 1. Update customer balance
+      batch.update(doc(db, 'customers', settlingCustomer.id), {
         creditBalance: newCredit,
-        updatedAt: serverTimestamp()
+        updatedAt: now
       });
+
+      // 2. Record credit transaction
+      const txRef = doc(collection(db, 'creditTransactions'));
+      batch.set(txRef, {
+        customerId: settlingCustomer.id,
+        type: 'payment',
+        amount: settleAmount,
+        previousBalance: settlingCustomer.creditBalance || 0,
+        newBalance: newCredit,
+        notes: 'Manual debt settlement',
+        createdAt: now
+      });
+
+      await batch.commit();
+      
       setSettlingCustomer(null);
       setSettleAmount(0);
     } catch (err) {
@@ -279,6 +344,14 @@ export function Customers({ role }: CustomersProps) {
                   </td>
                   <td className="px-5 py-4 text-right whitespace-nowrap">
                     <div className="flex justify-end items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setStatementCustomer(customer)}
+                        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
+                        title={t('creditStatement')}
+                      >
+                        <Clock className="w-4 h-4" />
+                      </button>
                       {customer.creditBalance && customer.creditBalance > 0 ? (
                         <button
                           type="button"
@@ -506,6 +579,102 @@ export function Customers({ role }: CustomersProps) {
                     <span>Confirm Repayment</span>
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Credit Statement Modal */}
+      <AnimatePresence>
+        {statementCustomer && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 max-h-[85vh]"
+            >
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">{t('creditStatement')}</h3>
+                    <p className="text-xs text-slate-500">{statementCustomer.name} ({statementCustomer.phone})</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStatementCustomer(null)}
+                  className="p-2 hover:bg-slate-200/60 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex justify-between items-center mb-6">
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{t('credit_debt')}</p>
+                    <p className="text-2xl font-black text-rose-600 tabular-nums">฿{statementCustomer.creditBalance.toLocaleString()}</p>
+                  </div>
+                  <button 
+                    onClick={() => window.print()}
+                    className="p-3 bg-white border border-slate-200 rounded-xl text-slate-600 hover:text-indigo-600 transition-all shadow-sm"
+                  >
+                    <Printer className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">{t('transactionHistory')}</h4>
+                  
+                  {creditTransactions.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 border-2 border-dashed border-slate-100 rounded-2xl">
+                      <p>{t('noLogsFound')}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {creditTransactions.map((tx) => (
+                        <div key={tx.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between hover:border-indigo-100 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-xl ${tx.type === 'charge' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                              {tx.type === 'charge' ? <CreditCard className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-900">
+                                {tx.type === 'charge' ? t('charge') : t('payment')}
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-medium">
+                                {tx.createdAt?.toDate ? format(tx.createdAt.toDate(), 'dd MMM yyyy, hh:mm a') : 'Recent'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-sm font-black tabular-nums ${tx.type === 'charge' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                              {tx.type === 'charge' ? '+' : '-'}฿{tx.amount.toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-bold">
+                              {t('newBalance')}: ฿{tx.newBalance.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                <button
+                  type="button"
+                  onClick={() => setStatementCustomer(null)}
+                  className="w-full py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  {t('close')}
+                </button>
               </div>
             </motion.div>
           </div>

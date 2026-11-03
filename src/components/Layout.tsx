@@ -15,7 +15,10 @@ import {
   Store,
   Truck,
   Download,
-  Smartphone
+  Smartphone,
+  DollarSign,
+  Gift,
+  ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -29,6 +32,7 @@ import { InstallModal } from './InstallModal';
 import { OfflineIndicator } from './OfflineIndicator';
 import { DEFAULT_SETTINGS, subscribeStoreSettings } from '../lib/storeSettings';
 import { StoreSettings } from '../types';
+import { Lock, Unlock, ShieldAlert } from 'lucide-react';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -41,9 +45,22 @@ interface LayoutProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onLogout: () => void;
+  isOwnerUnlocked?: boolean;
+  onRequirePin?: () => void;
+  onLockCashier?: () => void;
 }
 
-export function Layout({ children, user, role, activeTab, setActiveTab, onLogout }: LayoutProps) {
+export function Layout({ 
+  children, 
+  user, 
+  role, 
+  activeTab, 
+  setActiveTab, 
+  onLogout,
+  isOwnerUnlocked = false,
+  onRequirePin,
+  onLockCashier
+}: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInstallOpen, setIsInstallOpen] = useState(false);
@@ -121,6 +138,10 @@ export function Layout({ children, user, role, activeTab, setActiveTab, onLogout
     { id: 'customers', label: t('customers'), icon: Users },
     { id: 'shifts', label: t('shifts'), icon: Clock },
     { id: 'history', label: t('history'), icon: HistoryIcon },
+    { id: 'expenses', label: t('expenses'), icon: DollarSign },
+    { id: 'promotions', label: t('promotions_bundles'), icon: Gift },
+    { id: 'staff', label: t('staff_management'), icon: Users },
+    { id: 'audit-logs', label: t('auditLogs'), icon: ClipboardList },
     { id: 'tasks', label: t('tasks'), icon: CheckSquare },
   ];
 

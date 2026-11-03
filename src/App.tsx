@@ -11,14 +11,59 @@ import { Tasks } from './components/Tasks';
 import { Customers } from './components/Customers';
 import { Shifts } from './components/Shifts';
 import { Suppliers } from './components/Suppliers';
-import { UserRole } from './types';
-import { Loader2 } from 'lucide-react';
+import { Expenses } from './components/Expenses';
+import { Staff } from './components/Staff';
+import { Promotions } from './components/Promotions';
+import AuditLogList from './components/AuditLog';
+import { PinPadModal } from './components/PinPadModal';
+import { DEFAULT_SETTINGS, subscribeStoreSettings } from './lib/storeSettings';
+import { StoreSettings } from './types';
+import { Loader2, Lock } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<'admin' | 'staff' | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
+
+  // Owner vs Cashier Lock State
+  const [isOwnerUnlocked, setIsOwnerUnlocked] = useState<boolean>(() => {
+    return localStorage.getItem('pos_owner_unlocked') === 'true';
+  });
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinModalTitle, setPinModalTitle] = useState('ပိုင်ရှင် PIN နံပါတ် ရိုက်ထည့်ပါ');
+  const [pinModalSubtitle, setPinModalSubtitle] = useState('Admin/Owner သာ ကြည့်ရှုခွင့်ရှိသော စာရင်းများအတွက် PIN ၄ လုံး ရိုက်ပါ');
+  const [pendingPinAction, setPendingPinAction] = useState<(() => void) | null>(null);
+
+  useEffect(() => {
+    const unsub = subscribeStoreSettings((s) => setSettings(s));
+    return () => unsub();
+  }, []);
+
+  const handleUnlockOwner = () => {
+    setIsOwnerUnlocked(true);
+    localStorage.setItem('pos_owner_unlocked', 'true');
+  };
+
+  const handleLockCashier = () => {
+    setIsOwnerUnlocked(false);
+    localStorage.setItem('pos_owner_unlocked', 'false');
+  };
+
+  const promptPin = (
+    title = 'ပိုင်ရှင် PIN နံပါတ် ရိုက်ထည့်ပါ',
+    subtitle = 'Gross Profit, ဝယ်ဈေး (Cost Price) နှင့် ပစ္စည်းပြင်ဆင်/ဖျက်ပိုင်ခွင့်အတွက် PIN ရိုက်ပါ',
+    onSuccessAction?: () => void
+  ) => {
+    setPinModalTitle(title);
+    setPinModalSubtitle(subtitle);
+    setPendingPinAction(() => () => {
+      handleUnlockOwner();
+      if (onSuccessAction) onSuccessAction();
+    });
+    setIsPinModalOpen(true);
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -26,21 +71,28 @@ export default function App() {
         setUser(currentUser);
         try {
           const roleDoc = await getDoc(doc(db, 'roles', currentUser.uid));
+          let finalRole: 'admin' | 'staff' = 'staff';
+
           if (roleDoc.exists()) {
-            setRole(roleDoc.data().role as 'admin' | 'staff');
+            finalRole = roleDoc.data().role as 'admin' | 'staff';
           } else {
-            const newRole: 'admin' | 'staff' = 'admin';
+            finalRole = 'admin';
             const rolePayload = {
-              role: newRole,
+              role: finalRole,
               email: currentUser.email,
               updatedAt: serverTimestamp()
             };
             await setDoc(doc(db, 'roles', currentUser.uid), rolePayload);
-            setRole(newRole);
           }
+
+          // Force admin for the owner email
+          if (currentUser.email === 'waiyanhtut476@gmail.com') {
+            finalRole = 'admin';
+          }
+          
+          setRole(finalRole);
         } catch (error) {
           console.error("Error fetching or creating role:", error);
-          // Fallback to admin for owner or staff
           if (currentUser.email === 'waiyanhtut476@gmail.com') {
             setRole('admin');
           } else {
@@ -108,15 +160,75 @@ export default function App() {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'dashboard': return <Dashboard onNavigate={setActiveTab} />;
-      case 'inventory': return <Inventory role={role} user={user} />;
+      case 'dashboard': 
+        return (
+          <Dashboard 
+            onNavigate={setActiveTab} 
+            role={role}
+            isOwnerUnlocked={isOwnerUnlocked}
+            onRequirePin={() => promptPin('ပိုင်ရှင် PIN နံပါတ် ရိုက်ပါ', 'ဆိုင်၏ အမြတ်ငွေ (Profit) စာရင်းကို ကြည့်ရန် Owner PIN ရိုက်ပါ')}
+          />
+        );
+      case 'inventory': 
+        return (
+          <Inventory 
+            role={role} 
+            user={user} 
+            isOwnerUnlocked={isOwnerUnlocked}
+            onRequirePin={promptPin}
+          />
+        );
       case 'pos': return <POS user={user} />;
       case 'suppliers': return <Suppliers user={user} role={role} />;
       case 'customers': return <Customers role={role} />;
       case 'shifts': return <Shifts user={user} />;
-      case 'history': return <History role={role} />;
+      case 'history': return (
+        <History 
+          role={role} 
+          isOwnerUnlocked={isOwnerUnlocked}
+          onRequirePin={() => promptPin('အရောင်းမှတ်တမ်း အမြတ်စာရင်း ကြည့်ရန်', 'အသေးစိတ် အရှုံး/အမြတ် တွက်ချက်မှုများကို ကြည့်ရန် Owner PIN ရိုက်ပါ')}
+        />
+      );
+      case 'expenses': return <Expenses user={user} role={role} />;
+      case 'staff': return (
+        <Staff 
+          role={role} 
+          isOwnerUnlocked={isOwnerUnlocked}
+          onRequirePin={() => promptPin('ဝန်ထမ်းစာရင်းကို ပြင်ဆင်ရန်', 'ဝန်ထမ်းစာရင်းနှင့် ရာထူးများကို စီမံခန့်ခွဲရန် Owner PIN ရိုက်ပါ')}
+        />
+      );
+      case 'promotions': return <Promotions role={role} />;
+      case 'audit-logs': 
+        if (!isOwnerUnlocked && role !== 'admin') {
+          return (
+            <div className="flex flex-col items-center justify-center h-[60vh] bg-white rounded-3xl border border-slate-200 p-8 text-center">
+              <div className="p-4 bg-slate-100 rounded-2xl mb-4 text-slate-400">
+                <Lock className="w-12 h-12" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 mb-2">Audit Logs Locked</h2>
+              <p className="text-slate-500 mb-6 max-w-sm">System activity history is restricted. Please enter the Owner PIN to view these logs.</p>
+              <button
+                onClick={() => promptPin('Audit Logs ကြည့်ရန်', 'စနစ်မှတ်တမ်းများကို ကြည့်ရှုရန် Owner PIN ရိုက်ထည့်ပါ')}
+                className="px-8 py-3 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700 active:scale-95"
+              >
+                Unlock with PIN
+              </button>
+            </div>
+          );
+        }
+        return (
+          <AuditLogList />
+        );
       case 'tasks': return <Tasks user={user} />;
-      default: return <Dashboard onNavigate={setActiveTab} />;
+      default: 
+        return (
+          <Dashboard 
+            onNavigate={setActiveTab} 
+            role={role}
+            isOwnerUnlocked={isOwnerUnlocked}
+            onRequirePin={() => promptPin('ပိုင်ရှင် PIN နံပါတ် ရိုက်ပါ', 'ဆိုင်၏ အမြတ်ငွေ (Profit) စာရင်းကို ကြည့်ရန် Owner PIN ရိုက်ပါ')}
+          />
+        );
     }
   };
 
@@ -124,13 +236,13 @@ export default function App() {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 px-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">Access Restricted</h1>
-          <p className="text-slate-500 mb-8">You do not have a role assigned to this store. Please contact the administrator.</p>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">ဝင်ရောက်ခွင့် မရှိပါ</h1>
+          <p className="text-slate-500 mb-8">သင့်ထံတွင် ဤဆိုင်ကို အသုံးပြုရန် သတ်မှတ်ထားသော ရာထူး (Role) မရှိသေးပါ။ ကျေးဇူးပြု၍ ဆိုင်ရှင် (Administrator) ကို ဆက်သွယ်ပါ။</p>
           <button
             onClick={logout}
             className="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-all"
           >
-            Sign Out
+            အကောင့်မှ ထွက်ရန် (Sign Out)
           </button>
         </div>
       </div>
@@ -138,14 +250,37 @@ export default function App() {
   }
 
   return (
-    <Layout
-      user={user}
-      role={role}
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-      onLogout={logout}
-    >
-      {renderContent()}
-    </Layout>
+    <>
+      <Layout
+        user={user}
+        role={role}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onLogout={logout}
+        isOwnerUnlocked={isOwnerUnlocked}
+        onRequirePin={() => promptPin('Owner PIN နံပါတ် ရိုက်ထည့်ပါ', 'Cashier Mode မှ Owner Mode သို့ ပြောင်းရန် PIN ရိုက်ပါ')}
+        onLockCashier={handleLockCashier}
+      >
+        {renderContent()}
+      </Layout>
+
+      <PinPadModal
+        isOpen={isPinModalOpen}
+        onClose={() => {
+          setIsPinModalOpen(false);
+          setPendingPinAction(null);
+        }}
+        onSuccess={() => {
+          if (pendingPinAction) {
+            pendingPinAction();
+          } else {
+            handleUnlockOwner();
+          }
+        }}
+        correctPin={settings.ownerPin || '1234'}
+        title={pinModalTitle}
+        subtitle={pinModalSubtitle}
+      />
+    </>
   );
 }

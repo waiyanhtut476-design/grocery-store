@@ -24,11 +24,33 @@ import {
   Plus, 
   ArrowRight, 
   Bell, 
-  Image as ImageIcon 
+  Image as ImageIcon,
+  FileSpreadsheet,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer,
+  AreaChart,
+  Area
+} from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
-import { Product, Sale } from '../types';
+import { Product, Sale, StoreSettings } from '../types';
 import { useLanguage } from '../lib/i18n';
+import { MonthlyReportModal } from './MonthlyReportModal';
+import { DEFAULT_SETTINGS, subscribeStoreSettings } from '../lib/storeSettings';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 export interface LowStockAlert {
   product: Product;
@@ -79,10 +101,19 @@ export function calculateLowStockItems(products: Product[]): LowStockAlert[] {
 
 interface DashboardProps {
   onNavigate?: (tab: string) => void;
+  role?: 'admin' | 'staff' | null;
+  isOwnerUnlocked?: boolean;
+  onRequirePin?: () => void;
 }
 
-export function Dashboard({ onNavigate }: DashboardProps) {
+export function Dashboard({ 
+  onNavigate, 
+  role = 'admin', 
+  isOwnerUnlocked = true, 
+  onRequirePin 
+}: DashboardProps) {
   const [products, setProducts] = useState<Product[]>([]);
+  const [allSales, setAllSales] = useState<Sale[]>([]);
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
   const [todaySalesTotal, setTodaySalesTotal] = useState(0);
   const [todayProfitTotal, setTodayProfitTotal] = useState(0);
@@ -92,7 +123,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [restockingId, setRestockingId] = useState<string | null>(null);
   const [restockSuccessItem, setRestockSuccessItem] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
   const { t } = useLanguage();
+
+  useEffect(() => {
+    const unsub = subscribeStoreSettings(s => setSettings(s));
+    return () => unsub();
+  }, []);
 
   // Real-time listener for products to keep stock alerts accurate
   useEffect(() => {
@@ -161,6 +199,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         const recent: Sale[] = [];
         recentSnap.forEach((d) => recent.push({ id: d.id, ...d.data() } as Sale));
         setRecentSales(recent);
+
+        // All sales for Monthly Report
+        const allQuery = query(collection(db, 'sales'), orderBy('createdAt', 'desc'), limit(500));
+        const allSnap = await getDocs(allQuery);
+        const allList: Sale[] = [];
+        allSnap.forEach((d) => allList.push({ id: d.id, ...d.data() } as Sale));
+        setAllSales(allList);
       } catch (err) {
         console.error('Dashboard sales error:', err);
       }
@@ -171,6 +216,38 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   // Calculate low stock alerts using the dedicated calculation function
   const lowStockAlerts = useMemo(() => calculateLowStockItems(products), [products]);
+
+  // Calculate 7-day sales trends for Chart
+  const chartData = useMemo(() => {
+    const last7Days = Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }).reverse();
+
+    return last7Days.map(date => {
+      const dateStr = date.toLocaleDateString([], { weekday: 'short', day: 'numeric' });
+      const dailySales = allSales.filter(s => {
+        if (s.status === 'voided') return false;
+        const sDate = s.createdAt?.toDate ? s.createdAt.toDate() : new Date();
+        sDate.setHours(0, 0, 0, 0);
+        return sDate.getTime() === date.getTime();
+      });
+
+      const revenue = dailySales.reduce((sum, s) => sum + (s.total || 0), 0);
+      const profit = dailySales.reduce((sum, s) => {
+        const cost = s.items?.reduce((cSum, item) => cSum + ((item.costPrice || 0) * item.quantity), 0) || 0;
+        return sum + (s.total - cost);
+      }, 0);
+
+      return {
+        name: dateStr,
+        revenue,
+        profit
+      };
+    });
+  }, [allSales]);
 
   // Quick Restock handler right from the Dashboard
   const handleQuickRestock = async (product: Product, addAmount: number) => {
@@ -192,20 +269,31 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
+  const isAuthorized = role === 'admin' || isOwnerUnlocked;
+  const currency = settings.currencySymbol || '฿';
+  const dualCurrency = settings.dualCurrencyEnabled;
+  const rate = settings.exchangeRateMMK || 125;
+  const secSymbol = settings.secondaryCurrencySymbol || 'Ks';
+
   const statCards = [
     {
       label: t('today_sales'),
-      value: `฿${todaySalesTotal.toLocaleString()}`,
+      value: `${currency}${todaySalesTotal.toLocaleString()}`,
+      subtext: dualCurrency ? `≈ ${Math.round(todaySalesTotal * rate).toLocaleString()} ${secSymbol}` : undefined,
       icon: TrendingUp,
       color: 'text-emerald-600',
       bg: 'bg-emerald-50'
     },
     {
       label: t('profit'),
-      value: `฿${todayProfitTotal.toLocaleString()}`,
-      icon: TrendingUp,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50'
+      value: isAuthorized ? `${currency}${todayProfitTotal.toLocaleString()}` : '••••••••',
+      subtext: isAuthorized 
+        ? (dualCurrency ? `≈ ${Math.round(todayProfitTotal * rate).toLocaleString()} ${secSymbol}` : undefined)
+        : '🔒 Owner PIN required',
+      icon: isAuthorized ? TrendingUp : Lock,
+      color: isAuthorized ? 'text-blue-600' : 'text-slate-400',
+      bg: isAuthorized ? 'bg-blue-50' : 'bg-slate-100',
+      action: !isAuthorized ? onRequirePin : undefined
     },
     {
       label: t('inventory'),
@@ -260,12 +348,28 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <h2 className="text-2xl font-bold text-slate-900">{t('dashboard')}</h2>
           <p className="text-slate-500">{t('welcome_back') || 'Welcome back to Grocery Flow.'}</p>
         </div>
-        {lowStockAlerts.length > 0 && (
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-            {lowStockAlerts.length} {t('low_stock_alert_title')}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              if (isAuthorized) {
+                setIsReportModalOpen(true);
+              } else if (onRequirePin) {
+                onRequirePin();
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-800 font-bold text-xs rounded-xl shadow-xs transition-all active:scale-95 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>{isAuthorized ? 'လစဉ် P&L အစီရင်ခံစာ (Excel / PDF)' : '🔒 P&L Report (Unlock)'}</span>
+          </button>
+          {lowStockAlerts.length > 0 && (
+            <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+              {lowStockAlerts.length} {t('low_stock_alert_title')}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Prominent Manager Notification Alert Banner */}
@@ -339,7 +443,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
-            className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden"
+            onClick={stat.action}
+            className={`p-6 bg-white rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden ${
+              stat.action ? 'cursor-pointer hover:border-indigo-400 hover:shadow-md transition-all' : ''
+            }`}
           >
             <div className="flex items-center justify-between mb-4">
               <div className={`p-2 rounded-xl ${stat.bg} ${stat.color}`}>
@@ -353,6 +460,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             </div>
             <p className="text-sm font-medium text-slate-500">{stat.label}</p>
             <h3 className="text-2xl font-bold text-slate-900 tabular-nums">{stat.value}</h3>
+            {stat.subtext && (
+              <p className="text-xs font-bold text-slate-500 mt-1">{stat.subtext}</p>
+            )}
           </motion.div>
         ))}
       </div>
@@ -524,6 +634,93 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
       )}
 
+      {/* Sales Trends Chart */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-indigo-600" />
+              <span>{t('salesTrends')}</span>
+            </h3>
+            <p className="text-xs text-slate-500">Revenue and Profit for the last 7 days</p>
+          </div>
+          <div className="flex items-center gap-4 text-xs font-bold">
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 bg-indigo-600 rounded-full" />
+              <span>{t('revenue')}</span>
+            </div>
+            {isAuthorized && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 bg-emerald-500 rounded-full" />
+                <span>{t('profit')}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
+                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                </linearGradient>
+                <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="name" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }}
+                dy={10}
+              />
+              <YAxis 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }}
+                tickFormatter={(value) => `${currency}${value.toLocaleString()}`}
+              />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: '#fff', 
+                  borderRadius: '16px', 
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                  padding: '12px'
+                }}
+                itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                labelStyle={{ marginBottom: '4px', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="revenue" 
+                name={t('revenue')}
+                stroke="#4f46e5" 
+                strokeWidth={3}
+                fillOpacity={1} 
+                fill="url(#colorRevenue)" 
+              />
+              {isAuthorized && (
+                <Area 
+                  type="monotone" 
+                  dataKey="profit" 
+                  name={t('profit')}
+                  stroke="#10b981" 
+                  strokeWidth={3}
+                  fillOpacity={1} 
+                  fill="url(#colorProfit)" 
+                />
+              )}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
       {/* Main Grid: Recent Transactions & Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -635,6 +832,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </div>
         </div>
       </div>
+      {/* Monthly Financial P&L Report Modal */}
+      <MonthlyReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        sales={allSales}
+        products={products}
+        settings={settings}
+      />
     </div>
   );
 }

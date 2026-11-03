@@ -68,18 +68,19 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
 
       const targetCameraId = cameraId || selectedCameraId || { facingMode: "environment" };
       
+      const config = {
+        fps: 20,
+        qrbox: (viewfinderWidth: number, viewHeight: number) => {
+          const minEdge = Math.min(viewfinderWidth, viewHeight);
+          const boxSize = Math.floor(minEdge * 0.7);
+          return { width: boxSize, height: boxSize };
+        },
+        aspectRatio: 1.0,
+      };
+
       await scannerRef.current.start(
         targetCameraId,
-        {
-          fps: 20,
-          qrbox: (viewfinderWidth, viewHeight) => {
-            const minEdge = Math.min(viewfinderWidth, viewHeight);
-            const boxSize = Math.floor(minEdge * 0.7);
-            return { width: boxSize, height: boxSize };
-          },
-          aspectRatio: 1.0,
-          // Experimental: Enable zoom or specific constraints if needed
-        },
+        config,
         (decodedText) => {
           onScan(decodedText);
           stopScanner();

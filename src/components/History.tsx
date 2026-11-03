@@ -34,15 +34,24 @@ import { exportToExcel } from '../lib/excel';
 import { useLanguage } from '../lib/i18n';
 import { ReceiptModal } from './ReceiptModal';
 import { DEFAULT_SETTINGS, subscribeStoreSettings } from '../lib/storeSettings';
+import { logActivity } from '../lib/audit';
 import { motion, AnimatePresence } from 'motion/react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 interface HistoryProps {
   role: 'admin' | 'staff' | null;
+  isOwnerUnlocked?: boolean;
+  onRequirePin?: () => void;
 }
 
 type DateRangeOption = 'today' | 'yesterday' | 'week' | 'month' | 'all';
 
-export function History({ role }: HistoryProps) {
+export function History({ role, isOwnerUnlocked = true, onRequirePin }: HistoryProps) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRangeOption>('all');
@@ -57,6 +66,7 @@ export function History({ role }: HistoryProps) {
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
 
   const { t } = useLanguage();
+  const isAuthorized = role === 'admin' || isOwnerUnlocked;
   const currency = settings.currencySymbol || '฿';
 
   useEffect(() => {
@@ -216,6 +226,14 @@ export function History({ role }: HistoryProps) {
 
       await batch.commit();
 
+      // Log Activity
+      logActivity(
+        'Void Sale',
+        'sale',
+        `Voided sale #${saleToVoid.id.slice(0, 8)} (${voidReason}). Total refund: ${currency}${saleToVoid.total.toLocaleString()}`,
+        saleToVoid.id
+      );
+
       setActionSuccessMessage(`Receipt #${saleToVoid.id.slice(0, 8)} voided and items restocked!`);
       setSaleToVoid(null);
       setTimeout(() => setActionSuccessMessage(null), 4000);
@@ -293,13 +311,20 @@ export function History({ role }: HistoryProps) {
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('est_profit')}</p>
-              <p className="text-2xl font-black text-emerald-600 mt-1 tabular-nums">{currency}{totalProfit.toLocaleString()}</p>
+              <p className={cn("text-2xl font-black mt-1 tabular-nums", isAuthorized ? "text-emerald-600" : "text-slate-400")}>
+                {isAuthorized ? `${currency}${totalProfit.toLocaleString()}` : '••••••••'}
+              </p>
               <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                {totalRevenue > 0 ? `${Math.round((totalProfit / totalRevenue) * 100)}% profit margin` : '0% margin'}
+                {isAuthorized 
+                  ? (totalRevenue > 0 ? `${Math.round((totalProfit / totalRevenue) * 100)}% profit margin` : '0% margin')
+                  : '🔒 Owner PIN required'}
               </p>
             </div>
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
-              <TrendingUp className="w-6 h-6" />
+            <div 
+              className={cn("p-3 rounded-2xl cursor-pointer transition-all", isAuthorized ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400 hover:bg-slate-200")}
+              onClick={!isAuthorized ? onRequirePin : undefined}
+            >
+              {isAuthorized ? <TrendingUp className="w-6 h-6" /> : <TrendingUp className="w-6 h-6" />}
             </div>
           </div>
 
@@ -364,7 +389,10 @@ export function History({ role }: HistoryProps) {
         </div>
 
         {/* Top 5 by Profit */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+        <div className={cn(
+          "bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4 relative overflow-hidden",
+          !isAuthorized && "min-h-[200px]"
+        )}>
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
               <Award className="w-4 h-4 text-emerald-600" />
@@ -373,35 +401,50 @@ export function History({ role }: HistoryProps) {
             <span className="text-xs text-slate-400 font-medium">By net profit earned</span>
           </div>
 
-          <div className="space-y-3">
-            {topByProfit.map((item, idx) => {
-              const pct = Math.round((item.profit / maxProfit) * 100);
-              return (
-                <div key={idx} className="space-y-1">
-                  <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-slate-800 truncate max-w-[200px] flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-bold shrink-0">
-                        {idx + 1}
+          {!isAuthorized ? (
+            <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center">
+              <div className="p-2.5 bg-slate-100 rounded-xl mb-2 text-slate-400">
+                <TrendingUp className="w-6 h-6" />
+              </div>
+              <p className="text-xs font-bold text-slate-600 mb-2">အမြတ်စာရင်း ကြည့်ရန် PIN ရိုက်ပါ</p>
+              <button
+                onClick={onRequirePin}
+                className="px-4 py-1.5 bg-indigo-600 text-white text-[10px] font-black rounded-lg shadow-sm hover:bg-indigo-700 transition-all uppercase tracking-wider"
+              >
+                Unlock Profits
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {topByProfit.map((item, idx) => {
+                const pct = Math.round((item.profit / maxProfit) * 100);
+                return (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between text-xs font-semibold">
+                      <span className="text-slate-800 truncate max-w-[200px] flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-bold shrink-0">
+                          {idx + 1}
+                        </span>
+                        {item.name}
                       </span>
-                      {item.name}
-                    </span>
-                    <span className="text-emerald-600 font-bold tabular-nums">
-                      +{currency}{item.profit.toLocaleString()} {t('profit_earned')}
-                    </span>
+                      <span className="text-emerald-600 font-bold tabular-nums">
+                        +{currency}{item.profit.toLocaleString()} {t('profit_earned')}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-emerald-500 h-2 rounded-full transition-all duration-500" 
+                        style={{ width: `${pct}%` }} 
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                    <div 
-                      className="bg-emerald-500 h-2 rounded-full transition-all duration-500" 
-                      style={{ width: `${pct}%` }} 
-                    />
-                  </div>
-                </div>
-              );
-            })}
-            {topByProfit.length === 0 && (
-              <p className="text-xs text-slate-400 py-4 text-center">No sales data available yet.</p>
-            )}
-          </div>
+                );
+              })}
+              {topByProfit.length === 0 && (
+                <p className="text-xs text-slate-400 py-4 text-center">No sales data available yet.</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -661,6 +704,4 @@ export function History({ role }: HistoryProps) {
   );
 }
 
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(' ');
-}
+

@@ -1,8 +1,9 @@
 import React from 'react';
-import { Printer, X, Receipt as ReceiptIcon, Award, UserCheck } from 'lucide-react';
+import { Printer, X, Receipt as ReceiptIcon, Award, UserCheck, Bluetooth, Loader2 } from 'lucide-react';
 import { Sale, StoreSettings } from '../types';
 import { useLanguage } from '../lib/i18n';
 import { motion, AnimatePresence } from 'motion/react';
+import { printReceiptViaBluetooth, isBluetoothSupported } from '../lib/bluetoothPrinter';
 
 interface ReceiptModalProps {
   sale: Sale | null;
@@ -16,8 +17,27 @@ export function ReceiptModal({ sale, settings, isOpen, onClose }: ReceiptModalPr
 
   if (!isOpen || !sale) return null;
 
+  const [isPrintingBt, setIsPrintingBt] = React.useState(false);
+  const [btSuccess, setBtSuccess] = React.useState(false);
+
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleBluetoothPrint = async () => {
+    if (!settings) return;
+    setIsPrintingBt(true);
+    try {
+      await printReceiptViaBluetooth(sale, settings);
+      setBtSuccess(true);
+      setTimeout(() => setBtSuccess(false), 2500);
+    } catch (err: any) {
+      if (err.name !== 'NotFoundError') {
+        alert(err.message || 'Bluetooth printer error. Make sure printer is turned on.');
+      }
+    } finally {
+      setIsPrintingBt(false);
+    }
   };
 
   const formattedDate = sale.createdAt?.toDate 
@@ -86,10 +106,26 @@ export function ReceiptModal({ sale, settings, isOpen, onClose }: ReceiptModalPr
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {isBluetoothSupported() && (
+                <button
+                  type="button"
+                  onClick={handleBluetoothPrint}
+                  disabled={isPrintingBt}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-emerald-100 active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title="Direct print to 58mm/80mm Bluetooth Thermal Printer"
+                >
+                  {isPrintingBt ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Bluetooth className="w-4 h-4" />
+                  )}
+                  <span>{btSuccess ? 'Sent to Printer!' : 'Bluetooth Print'}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handlePrint}
-                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-100 active:scale-95"
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-100 active:scale-95 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
                 <span>{t('print_receipt')}</span>
@@ -211,6 +247,14 @@ export function ReceiptModal({ sale, settings, isOpen, onClose }: ReceiptModalPr
                   <span className="uppercase">{t('net_total')}:</span>
                   <span className="tabular-nums">{currency}{sale.total.toLocaleString()}</span>
                 </div>
+                {settings?.dualCurrencyEnabled && (
+                  <div className="flex justify-between text-[11px] font-bold text-indigo-700 bg-indigo-50/70 px-2 py-1 rounded-md mt-1 font-sans">
+                    <span>Equivalent ({settings.secondaryCurrencySymbol || 'Ks'}):</span>
+                    <span className="tabular-nums font-mono font-black">
+                      {Math.round(sale.total * (settings.exchangeRateMMK || 125)).toLocaleString()} {settings.secondaryCurrencySymbol || 'Ks'}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Payment Details */}

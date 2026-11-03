@@ -82,7 +82,32 @@ export interface StoreSettings {
   taxRate: number;
   receiptFooter: string;
   themeColor?: 'emerald' | 'indigo' | 'violet' | 'amber' | 'rose' | 'cyan';
+  // Staff PIN & Permissions
+  ownerPin?: string; // Default: '1234'
+  cashierModeDefault?: boolean;
+  // Dual Currency (THB ฿ & MMK ကျပ်)
+  dualCurrencyEnabled?: boolean;
+  exchangeRateMMK?: number; // e.g., 1 THB = 125 MMK
+  secondaryCurrencySymbol?: string; // e.g. 'Ks' or 'MMK'
+  // Bluetooth Thermal Printer
+  bluetoothPrinterName?: string;
   updatedAt?: any;
+}
+
+export interface Promotion {
+  id: string;
+  title: string;
+  type: 'buy_x_get_y' | 'bundle_price' | 'category_discount';
+  targetProductId?: string;
+  targetProductName?: string;
+  targetCategory?: string;
+  buyQty?: number; // e.g. 2
+  freeQty?: number; // e.g. 1
+  bundleQty?: number; // e.g. 3
+  bundlePrice?: number; // e.g. 50฿
+  discountPercent?: number; // e.g. 10%
+  isActive: boolean;
+  createdAt?: any;
 }
 
 export interface Customer {
@@ -163,5 +188,39 @@ export interface DamageRecord {
   notes?: string;
   recordedBy: string;
   recordedByName: string;
+  createdAt: any;
+}
+export interface Expense {
+  id: string;
+  title: string;
+  category: 'rent' | 'utility' | 'salary' | 'inventory' | 'marketing' | 'other';
+  amount: number;
+  date: any; // Firestore Timestamp or Date string
+  notes?: string;
+  recordedBy: string;
+  recordedByName: string;
+  createdAt: any;
+}
+
+export interface AuditLog {
+  id: string;
+  action: string;
+  entityType: 'product' | 'sale' | 'customer' | 'settings' | 'role' | 'stock' | 'expense';
+  entityId?: string;
+  details: string;
+  performedBy: string;
+  performedByName: string;
+  createdAt: any;
+}
+
+export interface CreditTransaction {
+  id: string;
+  customerId: string;
+  type: 'charge' | 'payment';
+  amount: number;
+  previousBalance: number;
+  newBalance: number;
+  saleId?: string;
+  notes?: string;
   createdAt: any;
 }

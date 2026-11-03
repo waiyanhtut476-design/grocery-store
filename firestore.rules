@@ -11,6 +11,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
     // Bootstrapped owner admin email from runtime context
     function isOwnerEmail() {
       return isSignedIn() && request.auth.token.email == 'waiyanhtut476@gmail.com';
@@ -32,6 +36,7 @@ service cloud.firestore {
       return isSignedIn() && (
         isOwnerEmail() ||
         isAdmin() ||
+        // Allow access if no role exists yet (bootstrapping first user)
         !exists(/databases/$(database)/documents/roles/$(request.auth.uid)) ||
         (exists(/databases/$(database)/documents/roles/$(request.auth.uid)) && (getRole() == 'staff' || getRole() == 'admin'))
       );
@@ -78,6 +83,23 @@ service cloud.firestore {
         && data.status in ['todo', 'done'];
     }
 
+    function isValidExpense(data) {
+      return data.keys().hasAll(['title', 'category', 'amount', 'date', 'recordedBy', 'createdAt'])
+        && data.title is string && data.title.size() <= 100
+        && data.category in ['rent', 'utility', 'salary', 'inventory', 'marketing', 'other']
+        && data.amount is number && data.amount >= 0
+        && data.date is string
+        && data.recordedBy == request.auth.uid
+        && (data.createdAt == request.time || data.createdAt is timestamp);
+    }
+
+    function isValidPromotion(data) {
+      return data.keys().hasAll(['title', 'type', 'isActive'])
+        && data.title is string && data.title.size() <= 100
+        && data.type in ['buy_x_get_y', 'bundle_price', 'category_discount']
+        && data.isActive is bool;
+    }
+
     // Collection Rules
     match /products/{productId} {
       allow read: if isSignedIn();
@@ -98,10 +120,12 @@ service cloud.firestore {
     }
 
     match /roles/{userId} {
-      // Avoid recursion by checking UID directly for own document
+      // For list operation on roles, allow if user is owner or admin
+      // This might be problematic if not filtered, but we trust isAdmin() logic here
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow create: if isSignedIn() && (request.auth.uid == userId || isAdmin()) && isValidRole(request.resource.data);
       allow update: if isAdmin() && isValidRole(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /tasks/{taskId} {
@@ -138,6 +162,30 @@ service cloud.firestore {
     match /damages/{damageId} {
       allow read, write: if isStaff();
       allow delete: if isAdmin();
+    }
+
+    match /expenses/{expenseId} {
+      // Allow list if user is staff
+      allow read: if isStaff();
+      allow create, update: if isAdmin() && isValidExpense(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /promotions/{promotionId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidPromotion(request.resource.data);
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isStaff(); // PIN-protected in UI
+      allow create: if isSignedIn(); // Everyone signed in can log their own actions
+      allow update, delete: if false; // Logs are immutable
+    }
+
+    match /creditTransactions/{txId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if false; // Transactions are immutable
     }
   }
 }

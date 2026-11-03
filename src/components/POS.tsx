@@ -30,7 +30,12 @@ import {
   Receipt,
   Users,
   Award,
-  BookOpen
+  BookOpen,
+  Sparkles,
+  Filter,
+  Wand2,
+  Layers,
+  Check
 } from 'lucide-react';
 import { Product, SaleItem, Sale, Customer, StoreSettings, Shift } from '../types';
 import { BarcodeScanner } from './BarcodeScanner';
@@ -40,6 +45,13 @@ import { User } from 'firebase/auth';
 import { useLanguage } from '../lib/i18n';
 import { DEFAULT_SETTINGS, subscribeStoreSettings } from '../lib/storeSettings';
 import { cacheProductsLocally, getCachedProducts, queueOfflineSale } from '../lib/offlineCache';
+import { logActivity } from '../lib/audit';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 interface POSProps {
   user: User;
@@ -49,12 +61,100 @@ export function POS({ user }: POSProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [showMobileCart, setShowMobileCart] = useState(false);
   const { t } = useLanguage();
+
+  // Unique categories list from products
+  const productCategories = Array.from(
+    new Set(
+      products
+        .map(p => p.category?.trim())
+        .filter((c): c is string => Boolean(c && c.length > 0))
+    )
+  );
+  const uncategorizedCount = products.filter(p => !p.category || p.category.trim() === '').length;
+
+  // Category Management & Auto-Categorization States
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
+  const [categoryModalSearch, setCategoryModalSearch] = useState('');
+  const [categorizeToast, setCategorizeToast] = useState<string | null>(null);
+
+  // Quick assign category to product
+  const handleAssignCategory = async (productId: string, categoryName: string) => {
+    try {
+      const docRef = doc(db, 'products', productId);
+      const batch = writeBatch(db);
+      batch.update(docRef, { 
+        category: categoryName.trim(), 
+        updatedAt: serverTimestamp() 
+      });
+      await batch.commit();
+      setCategorizeToast(`Updated to "${categoryName}"`);
+      setTimeout(() => setCategorizeToast(null), 2500);
+    } catch (err) {
+      console.error('Error updating category:', err);
+      handleFirestoreError(err, OperationType.WRITE, 'products/' + productId);
+    }
+  };
+
+  // Smart auto-categorize all products based on names & keywords
+  const handleAutoCategorize = async () => {
+    setIsAutoCategorizing(true);
+    try {
+      const batch = writeBatch(db);
+      let updatedCount = 0;
+
+      products.forEach(p => {
+        const nameLower = (p.name || '').toLowerCase();
+        let targetCategory = '';
+
+        if (nameLower.includes('มาม่า') || nameLower.includes('ม่า') || nameLower.includes('ခေါက်ဆွဲ') || nameLower.includes('โจ๊ก') || nameLower.includes('noodle') || nameLower.includes('food')) {
+          targetCategory = 'Food / ခေါက်ဆွဲ';
+        } else if (nameLower.includes('namthip') || nameLower.includes('น้ำ') || nameLower.includes('water') || nameLower.includes('vitamilk') || nameLower.includes('milk') || nameLower.includes('drink') || nameLower.includes('အအေး')) {
+          targetCategory = 'Drinks / အအေး';
+        } else if (nameLower.includes('ยาดม') || nameLower.includes('hong') || nameLower.includes('thai') || nameLower.includes('ဆေး') || nameLower.includes('inhaler') || nameLower.includes('balm')) {
+          targetCategory = 'Health / ဆေးဝါး';
+        } else if (nameLower.includes('สามแม่ครัว') || nameLower.includes('ครัว') || nameLower.includes('canned') || nameLower.includes('fish') || nameLower.includes('ငါးသေတ္တာ')) {
+          targetCategory = 'Canned / စည်သွပ်ဘူး';
+        } else if (nameLower.includes('cooling') || nameLower.includes('play') || nameLower.includes('candy') || nameLower.includes('snack') || nameLower.includes('မုန့်')) {
+          targetCategory = 'Snacks / မုန့်မျိုးစုံ';
+        } else if (!p.category || p.category.trim() === '') {
+          targetCategory = 'General / အထွေထွေ';
+        }
+
+        if (targetCategory && p.category !== targetCategory) {
+          const docRef = doc(db, 'products', p.id);
+          batch.update(docRef, { category: targetCategory, updatedAt: serverTimestamp() });
+          updatedCount++;
+        }
+      });
+
+      if (updatedCount > 0) {
+        await batch.commit();
+        setCategorizeToast(`အမျိုးအစား (${updatedCount}) ခု အလိုအလျောက် ခွဲခြားပြီးပါပြီ!`);
+        
+        logActivity(
+          'Auto Categorize',
+          'product',
+          `Automatically categorized ${updatedCount} products into smart categories.`
+        );
+      } else {
+        setCategorizeToast('ပစ္စည်းအားလုံး အမျိုးအစား သတ်မှတ်ပြီးဖြစ်ပါသည်');
+      }
+      setTimeout(() => setCategorizeToast(null), 3000);
+    } catch (err) {
+      console.error('Error auto-categorizing:', err);
+      handleFirestoreError(err, OperationType.WRITE, 'products');
+    } finally {
+      setIsAutoCategorizing(false);
+    }
+  };
 
   // Settings
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
@@ -286,8 +386,15 @@ export function POS({ user }: POSProps) {
   // Points earned: 1 pt per 10฿ spent
   const pointsEarned = selectedCustomer ? Math.floor(finalTotal / 10) : 0;
 
-  // Filter products for gallery
+  // Filter products for gallery (search + category)
   const filteredProducts = products.filter(p => {
+    if (selectedCategory === 'uncategorized') {
+      if (p.category && p.category.trim().length > 0) return false;
+    } else if (selectedCategory !== 'all') {
+      if (p.category?.trim().toLowerCase() !== selectedCategory.toLowerCase()) {
+        return false;
+      }
+    }
     if (!search) return true;
     const matchName = p.name.toLowerCase().includes(search.toLowerCase());
     const matchBarcode = p.barcode.includes(search);
@@ -360,7 +467,6 @@ export function POS({ user }: POSProps) {
         }
       }
 
-      // Update Customer Points and Credit Debt if selected
       if (selectedCustomer) {
         const custRef = doc(db, 'customers', selectedCustomer.id);
         const newPoints = Math.max(0, (selectedCustomer.points || 0) - pointsRedeemedCount + pointsEarned);
@@ -373,9 +479,32 @@ export function POS({ user }: POSProps) {
           creditBalance: newCredit,
           updatedAt: now
         });
+
+        // Record Credit Transaction if applicable
+        if (paymentMethod === 'credit') {
+          const creditTxRef = doc(collection(db, 'creditTransactions'));
+          batch.set(creditTxRef, {
+            customerId: selectedCustomer.id,
+            type: 'charge',
+            amount: finalTotal,
+            previousBalance: selectedCustomer.creditBalance || 0,
+            newBalance: newCredit,
+            saleId: saleId,
+            notes: `Sale #${saleId.slice(0, 8)}`,
+            createdAt: now
+          });
+        }
       }
 
       await batch.commit();
+
+      // Log Activity
+      logActivity(
+        'Complete Sale',
+        'sale',
+        `Sold ${cartItemCount} items for ${settings.currencySymbol}${finalTotal.toLocaleString()}${paymentMethod === 'credit' ? ' (On Credit)' : ''}`,
+        saleId
+      );
 
       // Show receipt modal with transaction details
       const recordedSale: Sale = {
@@ -525,30 +654,266 @@ export function POS({ user }: POSProps) {
         <AnimatePresence>
           {hardwareScanToast && (
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="bg-emerald-600 text-white px-4 py-2.5 rounded-2xl shadow-lg flex items-center justify-between gap-3 text-xs font-bold"
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-4 text-sm font-bold min-w-[280px]"
             >
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-200" />
-                <span>Added to cart: {hardwareScanToast}</span>
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 bg-white/20 rounded-lg">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-200" />
+                </div>
+                <span>Added: {hardwareScanToast}</span>
               </div>
-              <span className="bg-emerald-700 px-2 py-0.5 rounded-lg text-[10px]">+1 Qty</span>
+              <span className="bg-emerald-700 px-2 py-1 rounded-lg text-[10px] font-black">+1 Qty</span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="relative shrink-0">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-          <input
-            type="text"
-            placeholder={t('search_placeholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl text-base focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all text-slate-900"
-          />
+        {/* Categorization Toast */}
+        <AnimatePresence>
+          {categorizeToast && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-indigo-600 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-4 text-sm font-bold min-w-[280px]"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 bg-white/20 rounded-lg">
+                  <Check className="w-5 h-5 text-indigo-200" />
+                </div>
+                <span>{categorizeToast}</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Search & Category Filter Bar */}
+        <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <input
+              type="text"
+              placeholder={t('search_placeholder')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-12 pr-10 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none shadow-xs transition-all text-slate-900"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Category Dropdown Selector - ALWAYS rendered */}
+          <div className="shrink-0 flex items-center gap-2">
+            <div className="relative w-full sm:w-auto">
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full sm:w-auto px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer transition-all hover:border-slate-300"
+              >
+                <option value="all">📁 {t('all_categories')} ({products.length})</option>
+                {uncategorizedCount > 0 && (
+                  <option value="uncategorized">⚠️ {t('uncategorized')} ({uncategorizedCount})</option>
+                )}
+                {productCategories.map((c) => {
+                  const count = products.filter(p => p.category?.trim().toLowerCase() === c.toLowerCase()).length;
+                  return (
+                    <option key={c} value={c}>
+                      🏷️ {c} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            
+            {/* Quick Category Manager Modal Trigger */}
+            <button
+              type="button"
+              onClick={() => setIsCategoryModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-xs cursor-pointer whitespace-nowrap active:scale-95"
+              title="Organize / Manage Categories"
+            >
+              <Tag className="w-4 h-4 text-indigo-600" />
+              <span className="hidden sm:inline">{t('manage_categories')}</span>
+            </button>
+          </div>
         </div>
+
+        {/* Horizontal Category Navigation Tabs - ALWAYS rendered */}
+        <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none -mx-1 px-1">
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('all')}
+            className={cn(
+              "px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 active:scale-95 cursor-pointer",
+              selectedCategory === 'all'
+                ? "bg-slate-900 text-white shadow-sm"
+                : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+            )}
+          >
+            <span>📁 {t('all_categories')}</span>
+            <span className={cn(
+              "px-1.5 py-0.5 rounded-full text-[10px] font-black",
+              selectedCategory === 'all' ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+            )}>
+              {products.length}
+            </span>
+          </button>
+
+          {uncategorizedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('uncategorized')}
+              className={cn(
+                "px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 active:scale-95 cursor-pointer",
+                selectedCategory === 'uncategorized'
+                  ? "bg-amber-600 text-white shadow-sm shadow-amber-200"
+                  : "bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100"
+              )}
+            >
+              <span>⚠️ {t('uncategorized')}</span>
+              <span className={cn(
+                "px-1.5 py-0.5 rounded-full text-[10px] font-black",
+                selectedCategory === 'uncategorized' ? "bg-white/20 text-white" : "bg-amber-200 text-amber-900"
+              )}>
+                {uncategorizedCount}
+              </span>
+            </button>
+          )}
+
+          {/* Dynamic Categories from Products */}
+          {productCategories.map((cat) => {
+            const count = products.filter(p => p.category?.trim().toLowerCase() === cat.toLowerCase()).length;
+            const isSelected = selectedCategory.toLowerCase() === cat.toLowerCase();
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setSelectedCategory(cat)}
+                className={cn(
+                  "px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 active:scale-95 cursor-pointer",
+                  isSelected
+                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-100"
+                    : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                )}
+              >
+                <span>🏷️ {cat}</span>
+                <span className={cn(
+                  "px-1.5 py-0.5 rounded-full text-[10px] font-black",
+                  isSelected ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+                )}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+
+          {/* If no categories yet or to offer presets */}
+          {productCategories.length === 0 && uncategorizedCount === 0 && (
+            <div className="flex items-center gap-1.5">
+              {['Drinks / အအေး', 'Food / ခေါက်ဆွဲ', 'Snacks / မုန့်', 'Canned / စည်သွပ်ဘူး', 'Health / ဆေးဝါး'].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-medium border border-dashed border-slate-300 text-slate-500 hover:text-indigo-600 hover:border-indigo-300 bg-white whitespace-nowrap"
+                >
+                  + {preset}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Uncategorized Alert & 1-Click Auto-Categorize Banner */}
+        {uncategorizedCount > 0 && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5 text-amber-900">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-amber-200 text-amber-800 shrink-0 font-bold text-sm">
+                ⚠️
+              </span>
+              <div>
+                <p className="font-bold text-slate-900">အမျိုးအစား မခွဲရသေးသော ပစ္စည်း ({uncategorizedCount}) မျိုး ရှိနေပါသည်</p>
+                <p className="text-amber-800/80 text-[11px]">ပစ္စည်းများ များလာပါက ရှုပ်မသွားစေရန် Categories သတ်မှတ်ခွဲထားနိုင်ပါသည်</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleAutoCategorize}
+                disabled={isAutoCategorizing}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                <span>{isAutoCategorizing ? 'ခွဲနေပါသည်...' : 'အလိုအလျောက် ခွဲရန်'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCategoryModalOpen(true)}
+                className="px-3 py-2 bg-white border border-amber-300 text-amber-900 font-bold rounded-xl hover:bg-amber-100/50 transition-colors cursor-pointer"
+              >
+                {t('manage_categories')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Active Filter Header Notice */}
+        {selectedCategory !== 'all' && (
+          <div className="flex items-center justify-between px-1 text-xs">
+            <span className="font-bold text-slate-700">
+              {selectedCategory === 'uncategorized' ? '⚠️ အမျိုးအစား မသတ်မှတ်ရသေးသော ပစ္စည်းများ' : `🏷️ Category: ${selectedCategory}`} ({filteredProducts.length} items)
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('all')}
+              className="text-indigo-600 font-bold hover:underline"
+            >
+              အားလုံးပြန်ကြည့်မည် (Show All)
+            </button>
+          </div>
+        )}
+
+        {/* Quick Shortcuts / Top Selling Section */}
+        {products.length > 0 && selectedCategory === 'all' && !search && (
+          <div className="shrink-0 space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] flex items-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-indigo-600" />
+                {t('top_selling')} / {t('quick_actions')}
+              </p>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none -mx-1 px-1">
+              {products.slice(0, 8).map(p => (
+                <button
+                  key={`shortcut-${p.id}`}
+                  onClick={() => addToCart(p)}
+                  className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-2xl hover:border-indigo-500 hover:shadow-md transition-all active:scale-95 shrink-0 group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <ShoppingBag className="w-4 h-4 text-slate-300 group-hover:text-indigo-400" />
+                    )}
+                  </div>
+                  <div className="text-left pr-1">
+                    <p className="text-[11px] font-bold text-slate-900 leading-tight truncate max-w-[80px]">{p.name}</p>
+                    <p className="text-[10px] font-black text-indigo-600">{currency}{p.price}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Product Gallery */}
         <div className="flex-1 overflow-y-auto pb-24 lg:pb-4 scrollbar-thin scrollbar-thumb-slate-200">
@@ -577,7 +942,17 @@ export function POS({ user }: POSProps) {
                     </div>
                   )}
                 </div>
-                <div className="p-4">
+                <div className="p-3.5 sm:p-4">
+                  {/* Category Tag Badge */}
+                  {p.category ? (
+                    <span className="inline-block px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100/70 rounded-md text-[10px] font-bold mb-1 line-clamp-1 max-w-full">
+                      🏷️ {p.category}
+                    </span>
+                  ) : (
+                    <span className="inline-block px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200/50 rounded-md text-[10px] font-medium mb-1">
+                      {t('uncategorized')}
+                    </span>
+                  )}
                   <p className="font-bold text-slate-900 text-sm line-clamp-1 leading-tight mb-1">{p.name}</p>
                   <div className="flex items-center justify-between">
                     <p className="text-indigo-600 font-black text-base">{currency}{p.price.toLocaleString()}</p>
@@ -1196,6 +1571,141 @@ export function POS({ user }: POSProps) {
         />
       )}
 
+      {/* Category Management Modal */}
+      <AnimatePresence>
+        {isCategoryModalOpen && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden border border-slate-100"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                    <Tag className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">အမျိုးအစားများ စီမံခွဲခြားရန် (Manage Categories)</h3>
+                    <p className="text-xs text-slate-500">ပစ္စည်းများ အမျိုးအစား သတ်မှတ်ပေးခြင်းဖြင့် POS တွင် အလွယ်တကူ ရှာဖွေနိုင်ပါသည်</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Action Toolbar */}
+              <div className="p-4 bg-white border-b border-slate-100 flex flex-col sm:flex-row gap-3 items-center justify-between shrink-0">
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="ရှာဖွေရန် (Search item)..."
+                    value={categoryModalSearch}
+                    onChange={(e) => setCategoryModalSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAutoCategorize}
+                  disabled={isAutoCategorizing}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <Wand2 className="w-4 h-4" />
+                  <span>{isAutoCategorizing ? 'ခွဲနေပါသည်...' : '⚡ အလိုအလျောက် အားလုံးခွဲရန် (Auto-Categorize)'}</span>
+                </button>
+              </div>
+
+              {/* Products List with Quick Category Buttons */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {products
+                  .filter(p => !categoryModalSearch || p.name.toLowerCase().includes(categoryModalSearch.toLowerCase()) || p.barcode.includes(categoryModalSearch))
+                  .map(p => (
+                    <div
+                      key={p.id}
+                      className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-100/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
+                          {p.imageUrl ? (
+                            <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <ShoppingBag className="w-5 h-5 text-slate-300" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate">{p.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-slate-400 font-mono">{p.barcode}</span>
+                            <span className="text-[10px] font-bold text-indigo-600">{currency}{p.price}</span>
+                            {p.category ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                                🏷️ {p.category}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-100 text-amber-800">
+                                မသတ်မှတ်ရသေး
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick Category Chips */}
+                      <div className="flex flex-wrap gap-1.5 shrink-0 sm:max-w-xs">
+                        {[
+                          'Drinks / အအေး',
+                          'Food / ခေါက်ဆွဲ',
+                          'Snacks / မုန့်',
+                          'Canned / စည်သွပ်ဘူး',
+                          'Health / ဆေးဝါး',
+                          'General / အထွေထွေ'
+                        ].map(cName => {
+                          const isCurrent = p.category?.trim().toLowerCase() === cName.toLowerCase();
+                          return (
+                            <button
+                              key={cName}
+                              type="button"
+                              onClick={() => handleAssignCategory(p.id, cName)}
+                              className={cn(
+                                "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer",
+                                isCurrent
+                                  ? "bg-indigo-600 text-white shadow-xs"
+                                  : "bg-white border border-slate-200 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+                              )}
+                            >
+                              {cName}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(false)}
+                  className="px-5 py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  {t('close')}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Thermal Receipt Modal */}
       <ReceiptModal
         sale={completedSale}
@@ -1225,8 +1735,4 @@ export function POS({ user }: POSProps) {
       </AnimatePresence>
     </div>
   );
-}
-
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(' ');
 }

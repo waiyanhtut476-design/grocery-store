@@ -35,6 +35,12 @@ import { useLanguage } from '../lib/i18n';
 import { DEFAULT_SETTINGS, subscribeStoreSettings } from '../lib/storeSettings';
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from 'firebase/auth';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 interface SuppliersProps {
   user: User;
@@ -862,6 +868,4 @@ export function Suppliers({ user, role }: SuppliersProps) {
   );
 }
 
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(' ');
-}
+

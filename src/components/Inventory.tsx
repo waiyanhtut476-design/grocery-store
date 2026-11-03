@@ -43,10 +43,19 @@ import { exportToExcel } from '../lib/excel';
 import * as XLSX from 'xlsx';
 import { User } from 'firebase/auth';
 import { cacheProductsLocally, getCachedProducts } from '../lib/offlineCache';
+import { logActivity } from '../lib/audit';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 interface InventoryProps {
   role: 'admin' | 'staff' | null;
   user?: User | null;
+  isOwnerUnlocked?: boolean;
+  onRequirePin?: (title?: string, subtitle?: string, onSuccessAction?: () => void) => void;
 }
 
 function getExpiryStatus(expiryDate?: string) {
@@ -63,7 +72,12 @@ function getExpiryStatus(expiryDate?: string) {
   return { status: 'ok' as const, days: diffDays };
 }
 
-export function Inventory({ role, user }: InventoryProps) {
+export function Inventory({ 
+  role, 
+  user, 
+  isOwnerUnlocked = true, 
+  onRequirePin 
+}: InventoryProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -74,6 +88,7 @@ export function Inventory({ role, user }: InventoryProps) {
   const [loading, setLoading] = useState(true);
   const [quickRestockingId, setQuickRestockingId] = useState<string | null>(null);
   const { t } = useLanguage();
+  const isAuthorized = role === 'admin' || isOwnerUnlocked;
 
   // CSV Import State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -183,6 +198,13 @@ export function Inventory({ role, user }: InventoryProps) {
         stock: newStock,
         updatedAt: serverTimestamp()
       });
+
+      logActivity(
+        'Quick Restock',
+        'stock',
+        `Restocked ${product.name} by ${addAmount}. New stock: ${newStock}`,
+        product.id
+      );
     } catch (err) {
       console.error('Quick restock error in Inventory:', err);
       handleFirestoreError(err, OperationType.WRITE, 'products/' + product.id);
@@ -215,6 +237,14 @@ export function Inventory({ role, user }: InventoryProps) {
 
     try {
       await setDoc(doc(db, 'products', id), payload);
+
+      logActivity(
+        editingProduct ? 'Edit Product' : 'Add Product',
+        'product',
+        `${editingProduct ? 'Updated' : 'Added'} product: ${formData.name} (${formData.barcode}) at price ฿${formData.price}`,
+        id
+      );
+
       setIsModalOpen(false);
       setEditingProduct(null);
       setFormData(initialFormData);
@@ -227,6 +257,13 @@ export function Inventory({ role, user }: InventoryProps) {
     if (!window.confirm('Are you sure you want to delete this product?')) return;
     try {
       await deleteDoc(doc(db, 'products', id));
+      
+      logActivity(
+        'Delete Product',
+        'product',
+        `Deleted product ID: ${id}`,
+        id
+      );
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'products/' + id);
     }
@@ -574,7 +611,7 @@ export function Inventory({ role, user }: InventoryProps) {
 
                     {/* 5. ราคาซื้อ (Purchase Price) */}
                     <td className="px-4 py-3 text-sm font-medium text-slate-600 tabular-nums whitespace-nowrap">
-                      ฿{(product.costPrice ?? 0).toLocaleString()}
+                      {isAuthorized ? `฿${(product.costPrice ?? 0).toLocaleString()}` : '••••'}
                     </td>
 
                     {/* 6. ราคาขาย (Selling Price) */}
@@ -656,13 +693,19 @@ export function Inventory({ role, user }: InventoryProps) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => openEdit(product)}
+                          onClick={() => {
+                            if (isAuthorized) {
+                              openEdit(product);
+                            } else if (onRequirePin) {
+                              onRequirePin('Edit Product', 'To edit products, please enter Owner PIN', () => openEdit(product));
+                            }
+                          }}
                           className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                           title={t('edit_product')}
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        {role === 'admin' && (
+                        {(role === 'admin' || isAuthorized) && (
                           <button
                             type="button"
                             onClick={() => handleDelete(product.id)}
@@ -843,14 +886,27 @@ export function Inventory({ role, user }: InventoryProps) {
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div>
+                      <div className="col-span-2 sm:col-span-1">
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('category')}</label>
                         <input
                           type="text"
                           value={formData.category}
                           onChange={(e) => setFormData({...formData, category: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900"
+                          placeholder="e.g. အအေး, ခေါက်ဆွဲ, မုန့်"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 text-sm"
                         />
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {['Drinks / အအေး', 'Food / ခေါက်ဆွဲ', 'Snacks / မုန့်', 'Canned / စည်သွပ်ဘူး', 'Health / ဆေးဝါး', 'General / အထွေထွေ'].map(catSuggestion => (
+                            <button
+                              key={catSuggestion}
+                              type="button"
+                              onClick={() => setFormData({...formData, category: catSuggestion})}
+                              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 transition-colors"
+                            >
+                              + {catSuggestion}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('unit')}</label>
@@ -1088,8 +1144,4 @@ function ImageCapture({ onCapture }: { onCapture: (url: string) => void }) {
       </button>
     </div>
   );
-}
-
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(' ');
 }

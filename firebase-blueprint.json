@@ -159,6 +159,72 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["productId", "productName", "barcode", "quantity", "costPrice", "lossAmount", "reason", "recordedBy", "createdAt"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Store operating expense record.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string", "enum": ["rent", "utility", "salary", "inventory", "marketing", "other"] },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "recordedBy": { "type": "string" },
+        "recordedByName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "amount", "date", "recordedBy", "createdAt"]
+    },
+    "Promotion": {
+      "title": "Promotion",
+      "description": "Automated discount or bundle offer.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 100 },
+        "type": { "type": "string", "enum": ["buy_x_get_y", "bundle_price", "category_discount"] },
+        "targetProductId": { "type": "string" },
+        "targetProductName": { "type": "string" },
+        "targetCategory": { "type": "string" },
+        "buyQty": { "type": "number" },
+        "freeQty": { "type": "number" },
+        "bundleQty": { "type": "number" },
+        "bundlePrice": { "type": "number" },
+        "discountPercent": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "type", "isActive"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System activity log for security and monitoring.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "entityType": { "type": "string" },
+        "details": { "type": "string" },
+        "performedBy": { "type": "string" },
+        "performedByName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "entityType", "performedBy", "createdAt"]
+    },
+    "CreditTransaction": {
+      "title": "CreditTransaction",
+      "description": "Historical record of customer credit changes.",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string" },
+        "type": { "type": "string", "enum": ["charge", "payment"] },
+        "amount": { "type": "number" },
+        "previousBalance": { "type": "number" },
+        "newBalance": { "type": "number" },
+        "saleId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerId", "type", "amount", "createdAt"]
     }
   },
   "firestore": {
@@ -205,6 +271,22 @@
     "/damages/{damageId}": {
       "schema": "DamageRecord",
       "description": "Damaged/expired stock write-offs."
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Operating expenses."
+    },
+    "/promotions/{promotionId}": {
+      "schema": "Promotion",
+      "description": "Sales promotions."
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System activity logs."
+    },
+    "/creditTransactions/{txId}": {
+      "schema": "CreditTransaction",
+      "description": "Customer credit history."
     }
   }
 }
